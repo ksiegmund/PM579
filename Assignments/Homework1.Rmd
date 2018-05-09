@@ -33,15 +33,16 @@ to call the help documentation.
 ### Using GitHub
 
 The directions for using GitHub for homework assignments are given here:
-http://www.princeton.edu/~mjs3/soc504_s2015/submitting_homework.shtml
+http://www.princeton.edu/~mjs3/soc504_s2015/submitting_homework.shtml.
+We will use use GitHub Classroom to simplify the process. With GitHub Classroom every homework assignment will arrive as a link in an email message. When you click on this link, you will 'Fork' the private homework repository directly to your GitHub account. The link will appear on the GitHub Classroom page. Clink on the link from the Classroom page and it will open the repository in your GitHub account.
 
-The steps are:
+The steps to using GitHub are:
 
-1. Fork
+1. Fork  --- done when you click the link sent by email
 2. Clone
 3. Commit
 4. Push
-5. Pull Request
+5. Pull Request --- GitHub classroom notifies instructor automatically
 
 If you have this on your computer, you've successfully accomplished steps 1 and 2 above. Your homework is to follow the directions below, answer any questions, and turn in the homework by following steps 3-5. 
 
@@ -145,7 +146,7 @@ hist(rnorm(100))
 
 ## 4. Knit and Turn in Assignment
 
-Please turn in both your Homework1.Rmd file as well as the *.html output using GitHub. You will need to follow steps 3-5 given at the website listed above.
+Please turn in both your Homework1.Rmd file as well as the *.html output using GitHub. You will need to Commit the changes (a commented time/date 'save') and Push the changes from your laptop back to your GitHub homework repository. GitHub classroom will email me when these steps are completed. 
 
 
 
