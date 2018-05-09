@@ -127,16 +127,14 @@ head(data,n=4)
 rm(data)
 ```
 
-The command sessionInfo() will dump information about the operating system you are running and packages you have loaded. This information, along with data and code, should allow someone to reproduce any results in the future. 
+## 3. Reproducible Research
 
+The command sessionInfo() will dump information about the operating system you are running and packages you have loaded. This information, along with data and code, should allow someone to reproduce any results in the future. 
 ```{r sessionInfo}
 sessionInfo()
 ```
 
-## 3. Reproducible Research
-
-Now you've seen how RMarkdown can be used to create code for reproducible research. Why might a result might NOT be reproducible? 
-
+###QUESTION: Why might a result might NOT be reproducible? 
 
 Hint: Consider the following 2 figures.
 ```{r rnorm}
@@ -145,8 +143,9 @@ hist(rnorm(100))
 hist(rnorm(100))
 ```
 
-
 ## 4. Knit and Turn in Assignment
 
 Please turn in both your Homework1.Rmd file as well as the *.html output using GitHub. You will need to follow steps 3-5 given at the website listed above.
+
+
 
