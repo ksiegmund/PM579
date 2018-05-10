@@ -44,6 +44,8 @@ cars$year
 # Import C42b cell line data from GEO
 #Illumina HumanHT-12 V4.0 expression beadchip
 #GPL10558; 47231 rows
+source("http://bioconductor.org/biocLite.R")
+if(!require("GEOquery")) biocLite("GEOquery")
 library(GEOquery)
 # The following line will download from GEO. However, this will
 # be extremely slow if we all do it simultaneously over the wifi.
@@ -81,9 +83,9 @@ plotMDS(ec42b,labels=paste(trtmat$TrtTime,
 ##
 ## Heatmap
 ##
-source("http://bioconductor.org/biocLite.R")
-biocLite("matlab")
-install.packages("tidyverse")
+#source("http://bioconductor.org/biocLite.R")
+if(!require("matlab")) biocLite("matlab")
+if(!require("tidyverse")) install.packages("tidyverse")
 library(matlab)   # this library let's us use blue-red color spectrum for heatmap  (jet.colors)
 library(tidyverse)      # this library has the recode command
 
