@@ -83,6 +83,7 @@ plotMDS(ec42b,labels=paste(trtmat$TrtTime,
 ##
 source("http://bioconductor.org/biocLite.R")
 biocLite("matlab")
+install.packages("tidyverse")
 library(matlab)   # this library let's us use blue-red color spectrum for heatmap  (jet.colors)
 library(tidyverse)      # this library has the recode command
 
