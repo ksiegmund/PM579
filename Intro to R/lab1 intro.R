@@ -16,7 +16,7 @@ z=x+y
 z
 
 # function calls are followed by ()
-quit()
+#quit()
 
 y=c(x,0,x)
 y
@@ -92,7 +92,6 @@ library(tidyverse)      # this library has the recode command
 ## assign colors to sample annotation variables
 clab<- matrix(unlist(strsplit(as.character(trtmat$TrtTime),split="_")),
                ncol=2,byrow=T)
-clab<-dataframe(clab)
 colnames(clab)<-c("treatments","hour")
 level_key <- list(siNS = "pink", sip300 = "orange", siCBP = "purple", '0hr' = "grey", '16hr' = "lightgreen")
 clab[,1]<- recode(clab[,1], !!!level_key)
