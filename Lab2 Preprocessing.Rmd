@@ -134,6 +134,16 @@ lines(lowess(A,M),col=2)
 }
 ```
 
+## RLE plot of unwanted variation
+
+```{r RLEplot, echo=FALSE}
+l2E<-log2(rawdata$E[rawdata$genes$Status=="regular",])
+l2E.median<-apply(l2E,1,median)         
+M<-sweep(log2(rawdata$E[rawdata$genes$Status=="regular",]),1,l2E.median)
+boxplot(M)
+abline(0,0,col=2)
+```
+
 ## Cluster between-sample distances
 
 Look for outlier sample using rawdata. Why before processing?
