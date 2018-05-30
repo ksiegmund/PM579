@@ -1,0 +1,230 @@
+---
+title: "Data visualization and clustering"
+author: "ks"
+date: "5/30/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Libraries}
+source("http://bioconductor.org/biocLite.R")
+if(!require("matlab")){biocLite("matlab")} 
+if(!require("scatterplot3d")){biocLite("scatterplot3d")} 
+#if(!require("Biobase")){biocLite("Biobase")} 
+library(limma)
+library(Biobase)
+```
+
+## Load data set
+
+Let's load the data from JBC (2012).
+```{r ReadData}
+jbcdir=c("data/JBC 2012")
+load(file.path(jbcdir,"jbcComBatCor.rda"))
+```
+
+## 3-D MDS plot of batch corrected data
+```{r 3dscatterplot, echo=FALSE}
+library(scatterplot3d)
+mds<-plotMDS(jbcComBatCor$E,ndim=3,plot=FALSE)
+scatterplot3d(mds[[3]],
+              color=unclass(jbcComBatCor$targets$Type),pch=16,
+              xlab=c("Leading logFC dim 1"),
+              ylab=c("Leading logFC dim 2"),
+              zlab=c("Leading logFC dim 3"),
+              main=c("MDS plot for JBC Data Set"),
+              zlim=c(-.4,2))
+legend("topright",inset=c(0.05,0.1),
+       levels(jbcComBatCor$targets$Type),
+       col=1:6,bty="n",pch=16,ncol=2)
+```
+
+## Heat map of JBC Data Set
+We will draw a heatmap after filtering to the 500 most variable probes. This is the same number as the default in plotMDS(). To give probes equal weight when clustering samples, we standardize the probes. We do this using robust measures of location/variation:
+```{r standardize}
+rowIQRs=function(x) (apply(x,1,IQR))
+standardize=function(x){
+  (x-rowMedians(x))/rowIQRs(x)
+}
+jbcstd=standardize(jbcComBatCor$E)
+top500iqr=which(rank(rowIQRs(jbcComBatCor$E))>
+                  nrow(jbcComBatCor$E)-500)
+length(top500iqr)
+```
+
+##Draw Heatmap
+
+First we will assign colors for the annotation/treatment information.
+```{r Heatmap}
+library(tidyverse)      # this library has the recode command
+library(matlab)
+
+clab<- matrix(unlist(strsplit(as.character(jbcComBatCor$targets$Type),split="_")),
+               ncol=2,byrow=T)
+colnames(clab)<-c("treatments","hour")
+level_key <- list(siNS = "pink", sip300 = "orange", siCBP = "purple",                   '0h' = "grey", '16h' = "lightgreen")
+clab[,1]<- recode(clab[,1], !!!level_key)
+clab[,2]<- recode(clab[,2], !!!level_key)
+clab
+source("Intro to R/heatmap.3.R")
+```
+
+```{r Heatmap3}
+par(cex.main=1)
+heatmap.3(jbcComBatCor$E[top500iqr,], scale="none",  margins=c(2,10), Rowv=TRUE, Colv=TRUE,
+          ColSideColors=clab,NumColSideColors=4, labCol=FALSE, labRow=NA,cexCol=1.8,
+          symbreaks=FALSE, key=TRUE, symkey=FALSE, density.info="none", trace="none", KeyValueName="log2(Expr)",
+          col=jet.colors(32))
+legend("topright",
+       c("NS","CBP","p300","0hr","16hr"),cex=1.2,
+       fill=c("pink","purple","orange","grey","lightgreen"), border=FALSE,bty="n")
+
+```
+
+## Dendrogram of sample cluster from 500 most varying genes
+
+```{r dendrogram}
+genesubset=jbcstd[top500iqr,]
+colnames(genesubset)=jbcComBatCor$targets$Type
+col.dist<-dist(t(genesubset))  #Euclidean distance is the default
+hc=hclust(col.dist,method="average")
+par(cex=1.2,lwd=2)
+plot(hc)
+```
+
+
+We can use different metrics for row distances and column distances. Here we will use the correlation metric for genes, and Euclidean distance for samples.
+
+Row distances: as.dist() takes a matrix of pair-wise distances and makes it a distance function (lower-diagonal matrix). Genes are the rows of the matrix, but cor() computes correlations between columns so we must transpose the matrix.
+
+Column distances: dist() takes a data matrix and computes distances between rows. Typically in statistics the rows are the samples (but not for microarray data) so we have to transpose the matrix to do this for the correct dimension.
+```{r distances}
+row.dist<-as.dist(1-cor(t(genesubset)))
+col.dist<-dist(t(genesubset),method="euclidean")
+```
+
+```{r heatmap}
+cc=as.character(jbcComBatCor$targets$Type)
+level_key <- list(siNS_0h = "lightgreen", siNS_16h = "darkgreen",
+                  sip300_0h = "pink",     sip300_16h = "purple",
+                  siCBP_0h = "lightblue", siCBP_16h = "darkblue" )
+cc<- recode(cc, !!!level_key)
+
+hmp.dist<-heatmap(genesubset,labRow=NA,labCol=NA,
+      Colv=as.dendrogram(hclust(col.dist,method="average")),
+      Rowv=as.dendrogram(hclust(row.dist,method="average")),
+      ColSideColors=cc,xlab="Samples",ylab="Features",
+      col=jet.colors(32))
+```
+
+
+Now let's try this same plot but cluster genes and samples using 1-correlation metric.
+```{r distances2}
+row.dist<-as.dist(1-cor(t(genesubset)))
+col.dist<-as.dist(1-cor(genesubset))
+```
+
+```{r heatmap2, echo=FALSE}
+hmp.dist<-heatmap(genesubset,labRow=NA,labCol=NA,
+      Colv=as.dendrogram(hclust(col.dist,method="average")),
+      Rowv=as.dendrogram(hclust(row.dist,method="average")),
+      ColSideColors=cc,xlab="Samples",ylab="Features",
+      col=jet.colors(32))
+```
+
+Does anything change?
+
+## Heatmap of sample distance matrix
+```{r CorMat, echo=FALSE}
+col.dist<-dist(t(genesubset))
+heatmap(as.matrix(col.dist),sym=TRUE,
+        distfun=function(x)(as.dist(x)),
+        hclustfun=function(x)(hclust(col.dist,method="average")),
+        ColSideColors=cc,
+        col=jet.colors(32))
+```
+
+## Cluster analysis using K-means
+
+Kmeans uses a random number generator to generate starting values for the algorithm. In order to reproduce our results later we have to set the seed for the random number generator using the set.seed() command.
+
+```{r kmeans}
+library(stats)
+set.seed(46)
+km4=kmeans(t(genesubset),4)
+table(km4$cluster,jbcComBatCor$targets[,"Type"])
+```
+The treatments were not perfectly separated. Let's retrieve the within group sum of squares.
+```{r kmeans stats}
+km4$withinss
+sum(km4$withinss)
+```
+
+Now try 25 random starts and pick the best solution (minimum WSS)
+```{r kmeansMultStart}
+kmx=kmeans(t(genesubset),centers=4,nstart=25)
+kmx$withinss
+sum(kmx$withinss)
+table(kmx$cluster,jbcComBatCor$targets[,"Type"])
+```
+From picking the best solution from multiple starts (25) we are able to separate the samples perfectly by treatment.
+
+## Partitioning around Medoids (PAM)
+```{r pam}
+library(cluster)
+p4=pam(t(genesubset),4)
+table(p4$cluster,jbcComBatCor$targets[,"Type"])
+```
+
+# Silhouette plot
+```{r silhouette}
+silpam4=silhouette(p4)
+```
+```{r silplot, echo=FALSE}
+plot(silpam4)
+```
+
+Let's check how many groups the data support.
+```{r nclust}
+sw=rep(NA,7)
+for (i in 1:7) {
+  pm=pam(t(genesubset),i+1)
+  sw[i]=summary(pm)$silinfo$avg.width
+  }
+plot(2:8,sw,xlab="Number of Clusters",
+     ylab="Average Silhouette Width",type="l")
+```
+
+The Silhouette plot maximizes at 3 groups so let's run it again using 3 groups.
+```{r pam3}
+p3=pam(t(genesubset),3)
+table(p3$cluster,jbcComBatCor$targets[,"Type"])
+summary(p3)$silinfo$avg.width
+```
+The two sip300 samples (0h, 16h) are most different from the rest, but similar to each other.
+
+## Draw heatmap using PAM cluster order for samples
+```{r pamorder}
+okp3=order(p3$cluster)
+ogenesubset=genesubset[,okp3]
+row.dist=as.dist(1-cor(t(ogenesubset)))
+```
+Plot heatmap with columns fixed by order of PAM results the default is to scale the rows if symm = FALSE (default), o.w. none.
+
+```{r plotHeat} 
+hmp.dist<-heatmap(ogenesubset,labRow=NA,labCol=NA,Colv=NA,
+          Rowv=as.dendrogram(hclust(row.dist,method="average")), ColSideColors=as.character(p3$cluster[okp3]),
+          xlab="",ylab="",col=jet.colors(32))
+```
+
+##  Show PAM clusters (by colors) using MDS
+```{r plotMDS3}
+plotMDS(jbcComBatCor$E,labels=paste(jbcComBatCor$targets$Type, unclass(jbcComBatCor$targets$batch), sep="_"),
+        col=as.character(p3$cluster))
+```
+```{r sessionInfo}
+sessionInfo()
+```
