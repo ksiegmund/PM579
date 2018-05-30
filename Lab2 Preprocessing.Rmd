@@ -50,6 +50,7 @@ rawdata = read.ilmn(files=sfile, ctrlfiles=cfile,
         other.columns=c("Detection","Avg_NBEADS","BEAD_STDERR"))
 targets=read.csv(file=file.path(datadir,"SampleChars.csv"),row.names=1) #treatment information
 rawdata$targets=targets[colnames(rawdata),] # create slot for sample characteristic data in list object housing the gene expression data order rows to match columns of gene expression (arrays) 
+identical(rownames(rawdata$targets),colnames(rawdata))
 rm(targets)
 ```
 ```{r data list}
