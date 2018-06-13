@@ -18,7 +18,7 @@ if(!require("edgeR")) {biocLite("edgeR")}
 library(GenomicAlignments)
 library(org.Hs.eg.db)
 library(edgeR)
-library(limma)
+library(limma) 
 ```
 
 # Example Data: SummarizedExperiment object
