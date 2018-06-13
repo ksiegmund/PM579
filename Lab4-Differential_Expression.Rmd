@@ -117,11 +117,11 @@ time=jbcComBatCor$targets$hour
 trts=factor(jbcComBatCor$targets$treatments, 
             levels=c("siNS","siCBP","sip300"))
 design=model.matrix(~trts)
-#design
+design[1:4,]
 fit=lmFit(jbcComBatCor$E,design,subset=c(time=="16h"))
 
 contr.matrix=cbind(siCBP=c(0,1,0),sip300=c(0,0,1))
-#contr.matrix
+contr.matrix
 fitgpd=contrasts.fit(fit,contr.matrix)
 fitgpd=eBayes(fitgpd)
 topTable(fitgpd,n=10)
@@ -136,6 +136,7 @@ Here is the table of counts:
 ```{r results}
 table(results[,c("sip300")],results[,c("siCBP")])
 ```
+
 Both significant: 1095 + 1277 + 167 + 109 = 2648
 
 Only siCBP significant = 1494 + 1239 = 2733
@@ -154,6 +155,24 @@ Down-regulated genes only:
 ```{r countsDown}
 vennCounts(results,include=c("down"))
 ```
+
+If we want to study all pairwise comparisons, we can do this by using a different design matrix and contrast matrix.
+
+```{r Trt@162}
+design=model.matrix(~trts-1)
+design[1:4,]
+fit=lmFit(jbcComBatCor$E,design,subset=c(time=="16h"))
+
+contr.matrix=cbind('siCBP-siNS'=c(-1,1,0),
+                   'sip300-siNS'=c(-1,0,1),
+                   'siCBP-sip300'=c(0,1,-1))
+contr.matrix
+fitgpd=contrasts.fit(fit,contr.matrix)
+fitgpd=eBayes(fitgpd)
+topTable(fitgpd,n=10)
+```
+
+These are the same differences in treatment means as in the earlier model.
 
 Now look for genes associated with Time, Co-Reg or Time x Co-Reg interaction.
 ```{r mvm}
