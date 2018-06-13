@@ -1,0 +1,213 @@
+---
+title: "Lab 5. RNA seq"
+author: "ks"
+date: "6/13/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I will use edgeR to run Differential Expression analysis. We need to load some new libraries.
+```{r libs}
+source("http://bioconductor.org/biocLite.R")
+if(!require("GenomicAlignments")) {biocLite("GenomicAlignments")}
+if(!require("org.Hs.eg.db")) {biocLite("org.Hs.eg.db")}
+if(!require("edgeR")) {biocLite("edgeR")}
+library(GenomicAlignments)
+library(org.Hs.eg.db)
+library(edgeR)
+library(limma)
+```
+
+# Example Data: SummarizedExperiment object
+
+The data are for 4 experiments in A549 cells downloaded from ENCODE  (Reddy et al. 2009).
+```{r loadData}
+load(file="data/RNAseq/cnts.rda")
+show(cnts)
+```
+
+Let's load the table of counts. 
+```{r TableOfCounts}
+toc=assays(cnts)$counts
+head(toc)
+```
+
+Show counts for the 2 genes from Reddy et al. that showed differential expression for the same experiment: NFKBIA,PER1. From the paper, we know the gene Symbol, but not the Entrez gene id. However the counts table has the Entrez gene id as the rowname identifier. Let's find the Entrez gene id for the two gene symbols.  
+
+To do this we will use a data base that links different gene identifiers in humans (Hs). Here are the different databases we can map to the Entrez gene identifier.
+
+```{r Hs.DB}
+columns(org.Hs.eg.db)
+```
+
+
+```{r loadDB}
+keys<-c("NFKBIA","PER1")
+sel<-select(org.Hs.eg.db,keys=keys,columns="ENTREZID",
+            keytype="SYMBOL")
+show(sel)
+```
+
+Now let's see the gene counts for these 2 genes.  In Reddy et al., NHKBIA shows increased expression with DEX treatment.
+```{r selectData}
+toc[sel$ENTREZID,]
+```
+
+If we wanted to know the gene symbols for all the genes in our count matrix, we can link the names in the other direction.
+```{r eg2symbol}
+keys=rownames(toc)
+sel<-select(org.Hs.eg.db,keys=keys,columns="SYMBOL",
+            keytype="ENTREZID")
+show(sel[1:5,])
+```
+
+
+Next, we'll get the treatment information from the column names.
+```{r trtinfo}
+group=sub(c("Rep."),"",colnames(cnts))
+group=factor(group,levels=c("Etoh02","Dex100nm"))
+group
+```
+
+The default ordering when you make a factor variable is to alphabetize the groups. Here, since Etoh02 is the control experiment, I want appearing first so I set this using 'levels=c("Etoh02","Dex100nm")'.
+
+Now I'm ready to make my list variable (DGEList) used for differential expression of count data using the edgeR package.
+
+
+## Differential Expression: edgeR package
+
+```{r edgeR}
+y <- edgeR::DGEList(counts=assays(cnts)$counts,
+             group=group)
+dim(y)
+```
+
+Show summary of data table.
+```{r datatable}
+y$samples
+```
+
+Filter out lowly expressed tags:  those with > 1 cpm in at least 3 samples
+```{r filtercpm}
+cpm.y <- edgeR::cpm(y)
+y <- y[ rowSums(cpm.y > 1) >=3, ]
+dim(y)
+```
+
+Show summary of filtered data and compute normalization factors.
+```{r }
+y <- edgeR::calcNormFactors(y)
+y$samples
+```
+
+```{r headcounts}
+head(y$counts)
+```
+
+
+```{r boxplot}
+boxplot(log2(y$counts+1),col=as.numeric(group)+1)
+```
+
+
+Do samples cluster by treatment group?
+```{r mdsplot}
+plotMDS(y,labels =y$samples$group,lwd=3,cex=1.5,
+        cex.axis=1.3,cex.lab=1.5,xlim=c(-0.6,0.6))
+box(lwd=3)
+```
+
+See edgeRUsersGuide() for sample scripts to run analysis.
+First, we'll estiamte the common Dispersion
+
+```{r ecd}
+y.et <- edgeR::estimateCommonDisp(y,verbose=T)
+```
+
+Now we will estimate tag-specific dispersions, but use the empirical Bayes ideas that shrink estimates towards the common dispersion. Use of tagwise dispersion in DGE analysis is preferred so as to be more robust to outliers.
+```{r etd}
+y.et <- edgeR::estimateTagwiseDisp(y.et)
+plotBCV(y.et,cex.axis=1.2,cex.lab=1.5)
+box(lwd=2)
+```
+
+Now we can do differential expression several ways. The first is to perform an exact test for difference in means between 2 groups of negative-binomially distributed counts.
+```{r et}
+et <- edgeR::exactTest(y.et)
+options(digits=3)
+topTags(et)
+```
+
+Let's count the differentially expressed genes with FDR adjusted p<0.05.
+```{r decideTests}
+summary(de <- edgeR::decideTestsDGE(et, p=0.05))
+```
+
+Now let's show them on an MA plot.
+```{r MAplot}
+detags <- rownames(y)[as.logical(de)]
+plotSmear(et, de.tags=detags,cex.axis=1.3,cex.lab=1.5,cex=.7)
+abline(h = c(-1, 1), col = "blue",lwd=2)
+```
+
+We can do the same analysis using a regression design matrix. Using this format we could adjust for other variables if desired.
+```{r model}
+design <- model.matrix(~group)
+y.GLM <- edgeR::estimateGLMCommonDisp(y,design,verbose=T)
+y.GLM <- edgeR::estimateGLMTagwiseDisp(y.GLM,design)
+names(y.GLM)
+fit <- glmFit(y.GLM,design)
+lrt <- glmLRT(fit,coef=2)
+topTags(lrt)
+```
+
+These results are similar, but not identical to the results from using the exact test.
+```{r CompareResults}
+table(exactTest=decideTestsDGE(et,p=0.05),
+      LRT=decideTestsDGE(lrt,p=0.05))
+```
+
+## Use limma package: voom + eBayes
+
+Now let's also see how this compares to using voom + eBayes.  This needs to be done on entire count matrix (no gene filtering) in order for the variances to be properly estimated. 
+
+```{r voom}
+y <- DGEList(counts=assays(cnts)$counts,
+             group=group)
+dim(y)
+design <- model.matrix(~group)
+v <- limma::voom(y,design,plot=TRUE)
+```
+
+```{r voomMDS}
+plotMDS(v,labels=group)
+```
+
+eBayes also needs to be run on the unfiltered data to get the best variance estimates.
+```{r eBayes}
+fit <- lmFit(v,design)
+efit <- eBayes(fit)
+```
+
+Now, we want to compare these results to the earlier results when analyzing the counts using the Negative-Binomial distribution, so I will filter these genes to match those in the previous analysis.
+```{r filtereBayes}
+ffit <- efit[ rownames(et), ]
+options(digits=3)
+topTable(ffit,coef=2)
+```
+
+How do differentially expressed genes from voom overlap those from edgeR?
+```{r dt}
+table(ExactTest=decideTestsDGE(et),
+      eBayes=decideTests(ffit)[,2])
+```
+
+They are not exactly the same, but rather similar.
+
+
+```{r sessionInfo}
+sessionInfo()
+```
