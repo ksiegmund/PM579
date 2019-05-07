@@ -44,8 +44,7 @@ cars$year
 # Import C42b cell line data from GEO
 #Illumina HumanHT-12 V4.0 expression beadchip
 #GPL10558; 47231 rows
-source("http://bioconductor.org/biocLite.R")
-if(!require("GEOquery")) biocLite("GEOquery")
+BiocManager::install(c("GEOquery"))
 library(GEOquery)
 # The following line will download from GEO. However, this will
 # be extremely slow if we all do it simultaneously over the wifi.
@@ -73,8 +72,9 @@ trtmat<- matrix(
             nrow=24,byrow=TRUE)
 trtmat<- data.frame(trtmat)
 colnames(trtmat)<-c("cellline","TrtTime","rx","Rep")
+head(trtmat)
 library(limma)
-plotMDS(ec42b,labels=paste(trtmat$TrtTime, 
+limma::plotMDS(ec42b,labels=paste(trtmat$TrtTime, 
                             unclass(trtmat$Rep), sep="_"),
         col=unclass(trtmat$TrtTime),
         xlim = c(-1.5,1.5), ylim=c(-1,1),
@@ -83,33 +83,39 @@ plotMDS(ec42b,labels=paste(trtmat$TrtTime,
 ##
 ## Heatmap
 ##
-#source("http://bioconductor.org/biocLite.R")
-if(!require("matlab")) biocLite("matlab")
-if(!require("tidyverse")) install.packages("tidyverse")
+BiocManager::install(c("ComplexHeatmap","matlab"))
+library(ComplexHeatmap)
 library(matlab)   # this library let's us use blue-red color spectrum for heatmap  (jet.colors)
-library(tidyverse)      # this library has the recode command
 
-## assign colors to sample annotation variables
+# get sample annotations (treatment variables)
 clab<- matrix(unlist(strsplit(as.character(trtmat$TrtTime),split="_")),
                ncol=2,byrow=T)
 colnames(clab)<-c("treatments","hour")
-level_key <- list(siNS = "pink", sip300 = "orange", siCBP = "purple", '0hr' = "grey", '16hr' = "lightgreen")
-clab[,1]<- recode(clab[,1], !!!level_key)
-clab[,2]<- recode(clab[,2], !!!level_key)
-clab
 
-top500var=which(rank(apply(ec42b,1,IQR))>nrow(ec42b)-500)
-length(top500var)
+# get the row (feature) index for the 500 most variable features
+fiqr <- apply(ec42b,1,IQR)
+fsum <- data.frame(fiqr, rfiqr = rank(fiqr))
+top500 <- nrow(ec42b)-500
+fidx <- which( fsum$rfiqr > top500 )
+length(fidx)
 
-source("Intro to R/heatmap.3.R")
-par(cex.main=1)
-heatmap.3(ec42b[top500var,], scale="none",  margins=c(2,10), Rowv=TRUE, Colv=TRUE,
-          ColSideColors=clab,NumColSideColors=4, labCol=FALSE, labRow=NA,cexCol=1.8,
-          symbreaks=FALSE, key=TRUE, symkey=FALSE, density.info="none", trace="none", KeyValueName="log2(Expr)",
-          col=jet.colors(32))
-legend("topright",
-       c("NS","CBP","p300","0hr","16hr"),cex=1.2,
-       fill=c("pink","purple","orange","grey","lightgreen"), border=FALSE,bty="n")
-
+# column heatmap annotation
+colha = HeatmapAnnotation(df = data.frame(clab),
+                          col = list(treatments = c(siNS = "pink", 
+                                                   siCBP = "purple",
+                                                   sip300 = "orange"),
+                                     hour = c(
+                                             '0hr' = "grey",
+                                             '16hr' = "lightgreen")
+                                     ), 
+                          which = "column")
+# heatmap
+ht = Heatmap(ec42b[fidx,], column_title = "Samples",
+              name = "log2(Expr)", 
+              col = jet.colors(32), 
+              top_annotation = colha,
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+draw(ht, row_title = "Features")
 
 sessionInfo()
