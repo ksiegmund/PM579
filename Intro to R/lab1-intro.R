@@ -136,11 +136,12 @@ colha = HeatmapAnnotation(df = jbcdat$targets[,c("treatments","hour")],
                           which = "column")
 # heatmap
 ht = Heatmap(jbcdat$E[fidx,], column_title = "Samples",
+              row_title = "Features", 
               name = "log2(Expr)",
               col = jet.colors(32), 
               top_annotation = colha,
               show_column_names = FALSE,
               show_row_names = FALSE)
-draw(ht, row_title = "Features")
+draw(ht)
 
 sessionInfo()
