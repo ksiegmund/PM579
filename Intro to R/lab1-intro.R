@@ -41,7 +41,7 @@ cars$year
 # Import C42b cell line data from GEO
 #Illumina HumanHT-12 V4.0 expression beadchip
 #GPL10558; 47231 rows
-BiocManager::install(c("GEOquery"))
+if(!require("GEOquery")){BiocManager::install("GEOquery")}
 library(GEOquery)
 # The following line will download from GEO. However, this will
 # be extremely slow if we all do it simultaneously over the wifi.
@@ -64,7 +64,7 @@ names(fData(gse))   # fData() accesses the feature annotation information
 # Check if the sample annotation data and gene expression data
 # are ordered identically
 identical(as.character(pData(gse)$geo_accession),
-          colnames(jbcdat$E))
+                colnames(jbcdat$E))
 pData(gse)$title        # sample treatment information
 pData(gse)$description  # array name
 
@@ -112,13 +112,15 @@ limma::plotMDS(jbcdat$E,labels=jbcdat$targets$trt_time_rep,
 ##
 ## Heatmap
 ##
-BiocManager::install(c("ComplexHeatmap","matlab"))
+if(!require("ComplexHeatmap")){BiocManager::install("ComplexHeatmap")}
+if(!require("matlab")){BiocManager::install("matlab")}
 library(ComplexHeatmap)
 library(matlab)   # this library let's us use blue-red color spectrum for heatmap  (jet.colors)
 
 # get the row (feature) number for the 500 features with largest IQR
 fiqr <- apply(jbcdat$E,1,IQR)
 fsum <- data.frame(fiqr, rfiqr = rank(fiqr))
+head(fsum)
 top500 <- nrow(jbcdat$E)-500
 fidx <- which( fsum$rfiqr > top500 )
 length(fidx)
@@ -128,9 +130,8 @@ colha = HeatmapAnnotation(df = jbcdat$targets[,c("treatments","hour")],
                           col = list(treatments = c(siNS = "pink", 
                                                    siCBP = "purple",
                                                    sip300 = "orange"),
-                                     hour = c(
-                                             '0hr' = "grey",
-                                             '16hr' = "lightgreen")
+                                           hour = c('0hr' = "grey",
+                                                    '16hr' = "lightgreen")
                                      ), 
                           which = "column")
 # heatmap
