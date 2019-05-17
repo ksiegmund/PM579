@@ -119,10 +119,9 @@ library(matlab)   # this library let's us use blue-red color spectrum for heatma
 
 # get the row (feature) number for the 500 features with largest IQR
 fiqr <- apply(jbcdat$E,1,IQR)
-fsum <- data.frame(fiqr, rfiqr = rank(fiqr))
+fsum <- data.frame(fiqr, rfiqr = rank(-fiqr))
 head(fsum)
-top500 <- nrow(jbcdat$E)-500
-fidx <- which( fsum$rfiqr > top500 )
+fidx <- which( fsum$rfiqr <= 500)
 length(fidx)
 
 # column heatmap annotation
