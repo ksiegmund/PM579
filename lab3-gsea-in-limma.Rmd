@@ -1,0 +1,145 @@
+---
+title: "GSEA in Limma Pkg"
+author: "ks"
+date: "6/05/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## MSigDB: Curated C2 gene set collection.
+The Molecular Signatures Database is maintained at the Broad Institute, and available at: http://software.broadinstitute.org/gsea/msigdb.
+
+The maintainers of the limma package have created R datasets for direct download and use for gene set enrichment testing. Note that today, the R package version is not up to date with the lists available from the Broad Institute.
+```{r loadData}
+load(url("http://bioinf.wehi.edu.au/software/MSigDB/human_c2_v5p2.rdata"))
+```
+
+How many gene sets are in this curated database? (version v5p2)
+```{r summary}
+length(Hs.c2)
+```
+
+Here's the size distribution of the gene sets:
+```{r glsize}
+summary(sapply(Hs.c2,length))
+```
+
+Now let's get the data we'll use for gene set testing. I'm going to use the prostate cancer cell line data we've used a lot in class. This was a study to determine the subset of androgen-regulated genes that require the coactivator p300 or CBP for their regulation. This was a 2x2 factorial design with three treatment groups (siRNA p300, siRNA CBP, Non-specific control (NS)) and two time points (0 hr and 16 hr). All samples are treated with DHT (androgen) at time 0. There are 4 biological replicates for each treatment combination for a total of 24 Illumina arrays (GEO accession: GSE31873).
+```{r getData}
+library(limma)
+jbcdir=c("data/JBC 2012")
+load(file.path(jbcdir,"jbcdat.rda"))
+```
+
+Now let's set up the data to test differential expression after treatment with DHT hormone in the control treatment arm (siNS).
+
+For simplicity, I will subset the dataset on siNS only. In practice, I would fit all arrays, and just select the single coefficient that tests the time effect for siNS.
+```{r subsetData}
+sel <- which(jbcdat$targets$treatments == "siNS")
+sjbcdat <- NULL
+sjbcdat$E <- jbcdat$E[,sel]
+sjbcdat$targets <- jbcdat$targets[sel,]
+sjbcdat$genes <- jbcdat$genes
+```
+
+Compare average gene expression at 16 hours with avg gene expression at 0 hours.
+
+```{r modT}
+library(limma)
+if(!require("qvalue")) {BiocManager::install("qvalue")}
+library(qvalue)
+
+design <- model.matrix(~factor(sjbcdat$targets$hour))
+fit <- limma::lmFit(sjbcdat$E,design)
+contr.matrix <- as.matrix(c(0,1))
+colnames(contr.matrix) <- c("time16h")
+fit <- contrasts.fit(fit,contr.matrix)
+efit <- limma::eBayes(fit)
+
+hist(efit$p.value,main="",xlab="p value")
+```
+
+Next week we'll learn about q-values. Today I'm going to use a q-value < 0.05 to define my significant features. 
+```{r multtestcorrection}
+qobj <- qvalue(efit$p.value)
+print("Number of Significant features")
+table(sign(efit$coef)[qobj$qvalues<0.05])
+```
+
+```{r topt}
+tt <- limma::topTable(efit,n=8)
+tt
+```
+
+
+```{r genenames}
+sjbcdat$genes[rownames(tt),]$Symbol
+```
+
+How many genes does this cover?
+```{r gnum}
+  gid<- jbcdat$genes$Entrez_Gene_ID[qobj$qvalues<0.05]
+  length(unique(gid[!is.na(gid)]))
+```
+
+## Test for Gene Set Enrichment using camera()
+
+Now let's test for gene set enrichment.  We need to limit this to features that have Entrez Gene IDs.
+```{r decide}
+idx <- which(!is.na(sjbcdat$genes$Entrez_Gene_ID))
+c2.indices <- ids2indices(Hs.c2,sjbcdat$genes$Entrez_Gene_ID[idx])
+cam.16h <- camera(sjbcdat$E[idx,],c2.indices,design,
+                  contrast=contr.matrix,
+                  inter.gene.cor=0.01)
+head(cam.16h)
+```
+
+Let's check the number of genes in the top gene set.
+```{r gs}
+    length(unlist(Hs.c2["NELSON_RESPONSE_TO_ANDROGEN_UP"]))
+```
+
+And how about the number of features represent these genes...
+```{r gsi}
+    length(unlist(c2.indices["NELSON_RESPONSE_TO_ANDROGEN_UP"]))
+```
+
+There are $>$ 1.5 features per gene on average. This makes this an interesting gene set to explore the effect of correlation on gene set testing.
+If we provide test statistics after having run eBayes instead of providing the data set, the software does not adjust for inter-gene correlations.
+```{r decidet}
+cam.16h <- cameraPR(efit$t[idx],c2.indices)
+head(cam.16h)
+```
+
+Interesting. The pvalues change (they are more significant), as does the 4th & 5th top gene set. Does that seem reasonable? 
+
+## Let's limit search to KEGG pathways
+
+Instead of testing all curated gene sets, we could focus on those from certain databases. For instance, let's subset on the KEGG pathways.
+```{r kegg}
+kp=which(substr(names(Hs.c2),1,4)=="KEGG")
+#gsea.kp=camera(efit$t[idx],c2.indices[kp])
+gsea.kp <- camera(sjbcdat$E[idx,],c2.indices[kp],design,
+                  contrast=contr.matrix,
+                  inter.gene.cor=0.01)
+head(gsea.kp)
+```
+
+## Let's limit search to REACTOME pathways
+
+```{r reactome}
+rt=which(substr(names(Hs.c2),1,8)=="REACTOME")
+#gsea.rt=camera(efit$t[idx],c2.indices[rt])
+gsea.rt <- camera(sjbcdat$E[idx,],c2.indices[rt],design,
+                  contrast=contr.matrix,
+                  inter.gene.cor=0.01)
+head(gsea.rt)
+```
+
+
+```{r sI}
+sessionInfo()
+```
