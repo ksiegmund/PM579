@@ -1,0 +1,172 @@
+---
+title: "Multiple Test Correction Exercise"
+author: "PM579 class"
+date: "6/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Goal:  To understand statistical concepts of power, false-positive rate, and false-discovery rate. 
+
+```{r loadLibraries}
+if(!require("pwr")){BiocManager::install("pwr")} 
+if(!require("qvalue")){BiocManager::install("qvalue")} 
+library(pwr)
+library(qvalue)
+library(genefilter)
+```
+# Scenario 1.  Test differential expression of 1 gene 
+Suppose we want to test for differential expression of a gene in males and females, and
+
+* mean log2 expression in males   is 6 
+
+* mean log2 expression in females is 6.3
+
+* population standard deviation is 1
+
+Let's draw a sample of 50 males and 50 females, measure gene expression, and test for a difference in means at a 5% significance level.
+
+n1=n2=50
+
+y1~N(mean=6,   sd=1)
+
+y2~N(mean=6.3, sd=1)
+
+```{r 2gpttest}
+gem <- rnorm(50,6,1)
+gef <- rnorm(50,6.3,1)
+t.test(gem,gef,var.equal=T)
+```
+
+Is there a difference in mean expression?
+
+CONCLUSION:
+
+
+
+What is the power to detect differential expression if we sample 50 males and 50 females?
+
+```{r 2gpttestPower}
+dt = (6.3-6)/1
+pwr.t.test(n=50,d = dt, sig.level = 0.05, 
+           type = c("two.sample"), alternative = c("two.sided"))
+```
+
+How do we interpret the power?
+
+
+
+Illustrate the concept of power by randomly sampling from the population 1,000 times and testing for differential expression.  Let's create a [1000 x 100] matrix where each row is a simulated data set.
+```{r 1gene2gp}
+trtgp=rep(c(0,1),each=50)
+mx = matrix(NA,nrow=1000,ncol=100)
+for (i in 1:1000)
+  mx[i,]<- rnorm(n=100,
+            mean=(6+trtgp*0.3),sd=1)
+
+tt=genefilter::rowttests(mx,factor(trtgp))
+```
+
+What is the power for a 5% significance level?
+```{r power}
+
+```
+
+What sample size would we need to have 80% power for the same study?
+```{r ncalc}
+
+
+```
+
+Illustrate the concept of false-positive rate by sampling 100 males at random from the population 1,000 times and testing for differential expression in the first 50 males compared to the second 50.
+```{r 1gfpr}
+n <- 100
+nreps <- 1000
+trtgp <- rep(c(0,1),each=n/2)
+mx <- matrix(NA,nrow=nreps,ncol=n)
+for (i in 1:nreps)
+  mx[i,] <- rnorm(n=n,
+            mean=rep(6,n),
+            sd=1)
+
+tt=genefilter::rowttests(mx,factor(trtgp))
+```
+
+What is the false-positive fraction for a 5% significance level?
+```{r }
+
+```
+
+## Scenario 2.  Testing 10,000 genes
+
+7500 Null genes
+
+2500 Differentially Expressed Genes
+
+```{r 10kgenes}
+n1=n2=50
+trtgp <- rep(c(0,1),each=50)
+
+nullgenes <- 7500
+signgenes <- 2500
+ng <- nullgenes+signgenes
+truth <- c(rep(0,nullgenes),rep(1,signgenes))
+datmat <- array(rep(NA,(n1+n2)*ng),dim=c(ng,n1+n2))
+
+set.seed(45)
+# make distribution of gene standard deviations 
+sd <- rnorm(10000,1,.1)
+sd <- ifelse(sd<0.01,0.01,sd)
+hist(sd)
+for (i in 1:nullgenes)    datmat[i,] <- rnorm(n1+n2,0,sd[i])
+for (i in (nullgenes+1):ng) datmat[i,1:n1] <- rnorm(n1,0,sd[i])
+for (i in (nullgenes+1):ng) datmat[i,(n1+1):(n1+n2)] <-        
+                      rnorm(n2,0.7,sd[i])
+
+tt=genefilter::rowttests(datmat,factor(trtgp))
+BH.adjp=p.adjust(tt$p.value,method="BH")
+qobj=qvalue(tt$p.value)
+```
+
+How many false-positives are called using a p<0.05 cutoff if there is no correction for multiple testing?
+```{r nfp}
+
+```
+
+What is the false-discovery rate using p<0.05?
+```{r fdr}
+
+
+
+```
+
+
+What is the FDR controlling the false-discovery rate at 5%?
+```{r Truefdr}
+
+
+
+
+```
+
+
+What is the power controlling the false-discovery rate at 5%?
+```{r powerfdr}
+
+```
+
+What is the false-discovery rate for a q<0.05 cutoff?
+```{r fdrq}
+
+
+
+```
+
+What is the power for q<0.05?
+```{r powerfdr2}
+
+```
+
