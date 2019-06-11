@@ -59,20 +59,20 @@ How do we interpret the power?
 
 
 
-Illustrate the concept of power by randomly sampling from the population 1,000 times and testing for differential expression.  Let's create a [1000 x 100] matrix where each row is a simulated data set.
+Illustrate the concept of power by randomly sampling from the population 1,000 times and testing for differential expression.  Let's create a [100 x 1000] matrix where each row is a simulated data set.
 ```{r 1gene2gp}
 trtgp=rep(c(0,1),each=50)
-# [1000 x 50] in males
-sim_male   <- replicate(50,rnorm(n = 1000, mean = 6, sd = 1))
-# [1000 x 50] in females
-sim_female <- replicate(50,rnorm(n = 1000, mean = 6.3, sd = 1))
-mx <- cbind(sim_male,sim_female)
-tt=genefilter::rowttests(mx,factor(trtgp))
+# [50 x 1000] in males
+sim_male   <- replicate(1000,rnorm(n = 50, mean = 6, sd = 1))
+# [50 x 1000] in females
+sim_female <- replicate(1000,rnorm(n = 50, mean = 6.3, sd = 1))
+mx <- rbind(sim_male,sim_female)
+tt=genefilter::colttests(mx,factor(trtgp))
 ```
 
 What is the power for a 5% significance level?
 ```{r power}
-
+  
 ```
 
 What sample size would we need to have 80% power for the same study?
@@ -84,9 +84,9 @@ What sample size would we need to have 80% power for the same study?
 Illustrate the concept of false-positive rate by sampling 100 males at random from the population 1,000 times and testing for differential expression in the first 50 males compared to the second 50.
 ```{r 1gfpr}
 trtgp <- rep(c(0,1),each=50)
-sim_male <- replicate(100,rnorm(n = 1000, mean = 6, sd = 1))
+sim_male <- replicate(1000,rnorm(n = 100, mean = 6, sd = 1))
 
-tt=genefilter::rowttests(sim_male,factor(trtgp))
+tt=genefilter::colttests(sim_male,factor(trtgp))
 ```
 
 What is the false-positive fraction for a 5% significance level?
@@ -110,7 +110,7 @@ truth <- c(rep(0,nullgenes),rep(1,signgenes))
 set.seed(45)
 # make distribution of gene standard deviations 
 sim_sd <- rnorm(10000,1,.1)
-sim_sd <- ifelse(sd<0.01,0.01,sd)
+sim_sd <- ifelse(sim_sd<0.01,0.01,sim_sd)
 hist(sim_sd)
 
 nullmat <- replicate(100,rnorm(nullgenes, mean = 0, sd =
