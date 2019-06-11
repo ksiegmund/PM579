@@ -70,7 +70,7 @@ mx <- rbind(sim_male,sim_female)
 tt=genefilter::colttests(mx,factor(trtgp))
 ```
 
-What is the power for a 5% significance level?
+What is the (empirical) power for a 5% significance level?
 ```{r power}
   
 ```
@@ -89,7 +89,7 @@ sim_male <- replicate(1000,rnorm(n = 100, mean = 6, sd = 1))
 tt=genefilter::colttests(sim_male,factor(trtgp))
 ```
 
-What is the false-positive fraction for a 5% significance level?
+What is the (empirical) false-positive fraction for a 5% significance level?
 ```{r }
 
 ```
@@ -128,6 +128,8 @@ tt=genefilter::rowttests(datmat,factor(trtgp))
 BH.adjp=p.adjust(tt$p.value,method="BH")
 qobj=qvalue(tt$p.value)
 ```
+
+Compute the following values from the simulation results. 
 
 How many false-positives are called using a p<0.05 cutoff if there is no correction for multiple testing?
 ```{r nfp}
