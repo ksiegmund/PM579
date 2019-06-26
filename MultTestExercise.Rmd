@@ -59,7 +59,7 @@ How do we interpret the power?
 
 
 
-Illustrate the concept of power by randomly sampling from the population 1,000 times and testing for differential expression.  Let's create a [100 x 1000] matrix where each row is a simulated data set.
+Illustrate the concept of power by randomly sampling from the population 1,000 times and testing for differential expression.  Let's create a [100 x 1000] matrix where each column is a simulated data set.
 ```{r 1gene2gp}
 trtgp=rep(c(0,1),each=50)
 # [50 x 1000] in males
@@ -67,7 +67,7 @@ sim_male   <- replicate(1000,rnorm(n = 50, mean = 6, sd = 1))
 # [50 x 1000] in females
 sim_female <- replicate(1000,rnorm(n = 50, mean = 6.3, sd = 1))
 mx <- rbind(sim_male,sim_female)
-tt=genefilter::colttests(mx,factor(trtgp))
+tt <- genefilter::colttests(mx,factor(trtgp))
 ```
 
 What is the (empirical) power for a 5% significance level?
@@ -86,11 +86,11 @@ Illustrate the concept of false-positive rate by sampling 100 males at random fr
 trtgp <- rep(c(0,1),each=50)
 sim_male <- replicate(1000,rnorm(n = 100, mean = 6, sd = 1))
 
-tt=genefilter::colttests(sim_male,factor(trtgp))
+tt <- genefilter::colttests(sim_male,factor(trtgp))
 ```
 
 What is the (empirical) false-positive fraction for a 5% significance level?
-```{r }
+```{r fprate}
 
 ```
 
@@ -113,20 +113,27 @@ sim_sd <- rnorm(10000,1,.1)
 sim_sd <- ifelse(sim_sd<0.01,0.01,sim_sd)
 hist(sim_sd)
 
+# Get 7500 gene expression values for single observation
+# Repeat for 100 individuals(Gp1 + Gp2)
 nullmat <- replicate(100,rnorm(nullgenes, mean = 0, sd =
                                   sim_sd[1:nullgenes]))
-
+# Get 2500 gene expression values for Gp1 individual (mean = 0)
+# Repeat for 50 Gp1 individuals
 signmatg1 <- replicate(50,rnorm(signgenes, mean = 0, sd = 
                                   sim_sd[(nullgenes+1):ng]))
+# Get 2500 gene expression values for Gp2 individuals (mean = 0.7)
+# Repeat for 50 Gp2 individuals
 signmatg2 <- replicate(50,rnorm(signgenes, mean = 0.7, sd = 
                                   sim_sd[(nullgenes+1):ng]))
+# Columns are individuals (Gp1,Gp2)
 signmat <- cbind(signmatg1,signmatg2)
 
+# Rows have 7500 Null genes followed by 2500 DE genes
 datmat <- rbind(nullmat,signmat)
 
-tt=genefilter::rowttests(datmat,factor(trtgp))
-BH.adjp=p.adjust(tt$p.value,method="BH")
-qobj=qvalue(tt$p.value)
+tt <- genefilter::rowttests(datmat,factor(trtgp))
+BH.adjp <- p.adjust(tt$p.value,method="BH")
+qobj <- qvalue(tt$p.value)
 ```
 
 Compute the following values from the simulation results. 
