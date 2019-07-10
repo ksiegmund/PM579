@@ -1,0 +1,169 @@
+---
+title: "lab8-classification"
+author: "Ks"
+date: "7/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+if(!require("ALL")){BiocManager::install("ALL")} 
+library(ALL)
+library(limma)
+if(!require('MLInterfaces')) {BiocManager::install("MLInterfaces")}
+library(MLInterfaces) 
+if(!require("hgu95av2.db")){BiocManager::install("hgu95av2.db")} 
+library(hgu95av2.db)
+#if(!require('CMA')) {BiocManager::install("CMA")}
+#library(CMA)
+#if(!require('mlr')) install.packages("mlr")
+#if(!require('caret')) install.packages("caret")
+```
+
+
+# MLInterfaces
+
+These data are from a study of acute lymphoblastic leukemia (ALL). ALL has several molecular subtypes. 
+```{r alldata}
+data('ALL')
+ALL
+table(ALL$mol.biol,ALL$BT)
+```
+
+We'll study the 2 most common subtypes BCR/ABL and NEG, in B-CELL tumors.
+```{r bcell}
+bio <- which(ALL$mol.biol%in%c("BCR/ABL","NEG"))
+isb <- grep("^B",as.character(ALL$BT))
+kp <- intersect(bio,isb)
+all2 <- ALL[,kp]
+tmp <- all2$mol.biol=="BCR/ABL"
+tmp <- ifelse(tmp,"BCR/ABL","NEG")
+pData(all2)$bcrabl <- factor(tmp)
+dim(all2)
+```
+
+Feature selection is an issue with high-dimensional data. One strategy is to pre-select features using marginal (univariate) moderated t-tests.
+
+```{r multtests}
+des <- model.matrix(~all2$bcrabl)
+fit <- lmFit(all2,des)
+fit2 <- eBayes(fit)
+Tdiff <- topTable(fit2,coef=2,number=500)
+head(Tdiff)
+```
+
+
+```{r topgenes}
+all2 <- all2[rownames(Tdiff),]
+all2
+```
+
+## 1. DLDA 
+
+Now let's run diagonal linear discriminant analysis (DLDA). We will use the first 40 observations as the training data. The last 39 will be the test data.
+```{r DLDA}
+dlda1 = MLearn(bcrabl~., data = all2, .method = dldaI, trainInd = 1:40)
+dlda1
+confuMat(dlda1)
+```
+
+
+Now we'll use balanced 5-fold CV. By balanced, we'll stratify the selection of the 5 data splits on the outcome variable (bcrabl).
+
+```{r 5fcv}
+dldacv5 = MLearn(bcrabl~.,all2, dldaI,
+		xvalSpec("LOG",5,balKfold.xvspec(5)))
+confuMat(dldacv5)
+```
+
+
+Rather than use all 500 features, we can perform feature selection using the features with top absolute T statistic at each cross-validation partition (option = fs.absT).  This doesn't use moderated t-tests, but our sample size is large enough, it probably makes little difference.
+
+```{r featureselect}
+dldafs = MLearn(bcrabl~.,all2, dldaI,
+                 xvalSpec("LOG",5,balKfold.xvspec(5),
+                          fs.absT(30) ))
+dldafs
+confuMat(dldafs)
+```
+
+## 2. k-nearest neighbors
+
+Now we'll replace DLDA with 1-NN (kNN, k=1). We'll start with the first 40 observations as the training dataset.
+
+```{r knn}
+k1=MLearn(bcrabl~.,all2,knnI(k=1),1:40)
+k1
+confuMat(k1)
+names(RObject(k1))
+```
+
+Now we'll use 5-fold CV to estimate the test set error.
+```{r knncv5}
+knncv5 = MLearn(bcrabl~.,all2, knnI(k=1),
+		xvalSpec("LOG",5,balKfold.xvspec(5)))
+confuMat(knncv5)
+```
+
+Does it matter if we use leave-one-out CV instead?
+
+```{r loocv}
+knnloocv = MLearn(bcrabl~.,all2, knnI(k=1),	xvalSpec("LOO"))
+confuMat(knnloocv)
+```
+
+## 3. Random Forest
+
+```{r rf}
+rfALL = MLearn( bcrabl~.,all2, randomForestI, 1:40 )
+rfALL
+confuMat(rfALL)
+```
+
+## 4. Regularized Discriminant Analysis (RDA)
+
+```{r rda}
+set.seed(5142)
+r1 = MLearn(bcrabl~., all2, rdacvI, 1:40)
+confuMat(r1)
+```
+
+```{r plotrda,echo=FALSE}
+  plotXvalRDA(r1)  
+```
+
+
+```{r annotate}
+psid=RObject(r1)$keptFeatures
+length(psid)
+psid[1:4]
+psid=gsub("^X","",psid)
+psid[1:4]
+mget(psid[1:5],hgu95av2GENENAME)
+```
+
+```{r plotRObject, echo=FALSE}
+RObject(r1)
+```
+
+```{r RObjstats}
+dim(RObject(r1)$finalFit$centroids)
+RObject(r1)$finalFit$centroids[1:4,]
+```
+
+# mlr: Machine Learning in R
+
+For some reason the mlr tutorial doesn't appear on the Github website as advertised, but I found this one instead.
+
+https://www.analyticsvidhya.com/blog/2016/08/practicing-machine-learning-techniques-in-r-with-mlr-package/
+
+Authors are actively developing a new package mlr3. 
+
+```{sessioninfo}
+sessionInfo()
+```
+
+
