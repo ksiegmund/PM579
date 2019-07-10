@@ -47,7 +47,7 @@ dim(all2)
 
 ## Feature selection
 
-Feature selection is an issue with high-dimensional data. Too many noise (null) features will increase model complexity and lead to worse predictions. We can use a non-specific filter to reduce the model complexity, but we will do better by using features that are marginally (univariately) predictive. One strategy is to pre-select features using moderated t-tests. I will do this now to rank the features, but not to determine the number of features.
+Feature selection is an issue with high-dimensional data. Too many noise (null) features will increase model complexity and lead to worse predictions. We can use a non-specific filter to reduce the model complexity, but we will do better by using features that are marginally (univariately) predictive. One strategy is to pre-select features using moderated t-tests. I will do this now to rank the features, but not to determine the number of features.  If we want to determine the number of features, that is model-fitting and needs to be done on the training data only.
 
 ```{r multtests}
 des <- model.matrix(~all2$bcrabl)
@@ -74,6 +74,7 @@ dlda1
 confuMat(dlda1)
 ```
 
+Test set misclassification rate:  6/39 (15.4\%).
 
 Now we'll use balanced 5-fold CV. By balanced, we'll stratify the selection of the 5 data splits on the outcome variable (bcrabl).
 
@@ -84,7 +85,8 @@ confuMat(dldacv5)
 ```
 
 
-Rather than use all 500 features, we can perform feature selection using the features with top absolute T statistic at each cross-validation partition (option = fs.absT).  This doesn't use moderated t-tests, but our sample size is large enough, it probably makes little difference.
+
+Rather than use all 500 features, we can perform feature selection using the features with top absolute T statistic at each cross-validation partition (option = fs.absT).  This doesn't use moderated t-tests, but our sample size is large enough, it probably makes little difference.  It also requires that we give the number of features to select, and doesn't use a p-value cutoff. Other packages (e.g. mlr) give more flexible methods for variable selection.
 
 ```{r featureselect}
 dldafs = MLearn(bcrabl~.,all2, dldaI,
@@ -93,6 +95,8 @@ dldafs = MLearn(bcrabl~.,all2, dldaI,
 dldafs
 confuMat(dldafs)
 ```
+
+The error is lower (7 vs 10), which suggests the less complex model is preferred. We might need to repeat this comparison to make sure the improvement is reproducible.
 
 ### 2. k-nearest neighbors
 
@@ -112,12 +116,14 @@ knncv5 = MLearn(bcrabl~.,all2, knnI(k=1),
 confuMat(knncv5)
 ```
 
-Does it matter if we use leave-one-out CV instead?
+With only 79 observations, we may prefer leave-one-out cross-validation so that our training data set is larger.
 
 ```{r loocv}
 knnloocv = MLearn(bcrabl~.,all2, knnI(k=1),	xvalSpec("LOO"))
 confuMat(knnloocv)
 ```
+
+Does a lower prediction error mean a better model?  Unfortunately, no. The variance may be high, and we might not predict as well for an independent test set. Each training dataset is similar to the others, so similar models are estimated, which means they are all about the same as fitting all observations. We know that fitting all observations can result in a classifier with high variance and not necessarily predict well in future data sets. Newer model valdation approaches will use repeated CV, or resampling (e.g. boostrap).
 
 ### 3. Random Forest
 
