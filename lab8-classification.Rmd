@@ -45,7 +45,9 @@ pData(all2)$bcrabl <- factor(tmp)
 dim(all2)
 ```
 
-Feature selection is an issue with high-dimensional data. One strategy is to pre-select features using marginal (univariate) moderated t-tests.
+## Feature selection
+
+Feature selection is an issue with high-dimensional data. Too many noise (null) features will increase model complexity and lead to worse predictions. We can use a non-specific filter to reduce the model complexity, but we will do better by using features that are marginally (univariately) predictive. One strategy is to pre-select features using moderated t-tests. I will do this now to rank the features, but not to determine the number of features.
 
 ```{r multtests}
 des <- model.matrix(~all2$bcrabl)
@@ -61,7 +63,9 @@ all2 <- all2[rownames(Tdiff),]
 all2
 ```
 
-## 1. DLDA 
+## Classsification Algorithms
+
+### 1. DLDA 
 
 Now let's run diagonal linear discriminant analysis (DLDA). We will use the first 40 observations as the training data. The last 39 will be the test data.
 ```{r DLDA}
@@ -90,7 +94,7 @@ dldafs
 confuMat(dldafs)
 ```
 
-## 2. k-nearest neighbors
+### 2. k-nearest neighbors
 
 Now we'll replace DLDA with 1-NN (kNN, k=1). We'll start with the first 40 observations as the training dataset.
 
@@ -115,7 +119,7 @@ knnloocv = MLearn(bcrabl~.,all2, knnI(k=1),	xvalSpec("LOO"))
 confuMat(knnloocv)
 ```
 
-## 3. Random Forest
+### 3. Random Forest
 
 ```{r rf}
 rfALL = MLearn( bcrabl~.,all2, randomForestI, 1:40 )
@@ -123,7 +127,7 @@ rfALL
 confuMat(rfALL)
 ```
 
-## 4. Regularized Discriminant Analysis (RDA)
+### 4. Regularized Discriminant Analysis (RDA)
 
 ```{r rda}
 set.seed(5142)
