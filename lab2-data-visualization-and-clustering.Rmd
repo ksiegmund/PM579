@@ -18,6 +18,7 @@ if(!require("ggplot2")){BiocManager::install("ggplot2")}
 if(!require("ggjoy")){BiocManager::install("ggjoy")} 
 if(!require("dplyr")){BiocManager::install("dplyr")} 
 if(!require("scatterplot3d")){install.packges("scatterplot3d")} 
+if(!require("matrixStats")){install.packges("matrixStats")} 
 library(matlab)
 library(Biobase)
 library(ggplot2)
@@ -27,6 +28,7 @@ library(limma)
 library(tidyr)
 library(tidyverse)
 library(dplyr)
+library(matrixStats)
 ```
 
 ## Load data set
@@ -88,8 +90,7 @@ These all look very similar. That is because the arrays were normalized to have 
 We will draw a heatmap after filtering to the 500 most variable features. We choose this simply to match the default in plotMDS(). We use interquartile range, a robust measure of variation. To give features equal weight when clustering samples, we standardize them. We do this also using robust measures of location/variation.
 
 ```{r topvargenes}
-rowiqrs <- function(x) {apply(x,1,IQR)}
-fiqr <- rowiqrs(jbcdat$E)
+fiqr <- matrixStats::rowIQRs(jbcdat$E)
 top500iqr <- order(fiqr, decreasing = TRUE)[1:500]
 ```
 
@@ -148,6 +149,8 @@ standardize <- function(x){
   stdx <- (x - rowMedians(x))/rowiqrs(x)
 }
 jbcstd <- standardize(jbcdat$E)
+#genesubset <- jbcstd[top500iqr,]
+#colnames(genesubset)<- jbcdat$targets$type
 ```
 
 Row dissimilarities: Genes are the rows of the matrix, but cor() computes correlations between columns so we must transpose the matrix. Now we make it a distance matrix object using as.dist() takes a matrix of pair-wise distances and makes it a distance function (lower-diagonal matrix). 
