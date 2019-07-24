@@ -146,7 +146,7 @@ We can use different metrics for row distances and column distances. Here we wil
 
 ```{r standardize}
 standardize <- function(x){
-  stdx <- (x - rowMedians(x))/rowiqrs(x)
+  stdx <- (x - rowMedians(x))/rowIQRs(x)
 }
 jbcstd <- standardize(jbcdat$E)
 #genesubset <- jbcstd[top500iqr,]
