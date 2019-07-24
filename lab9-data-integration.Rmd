@@ -1,0 +1,157 @@
+---
+title: "lab9-data-integration"
+author: "Ks"
+date: "7/17/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##  CCA examples
+# https://stats.idre.ucla.edu/r/dae/canonical-correlation-analysis/
+
+```{r packages}
+#install.packages("GGally")
+#install.packages("CCA")
+require(ggplot2)
+require(GGally)
+require(CCA)
+
+#install.packages("PMA")
+library(PMA)
+```
+
+```{r readdat}
+mm <- read.csv("https://stats.idre.ucla.edu/stat/data/mmreg.csv")
+colnames(mm) <- c("Control", "Concept", "Motivation", "Read", "Write", "Math", 
+                  "Science", "Sex")
+summary(mm)
+xtabs(~Sex, data = mm)
+psych <- mm[, 1:3]
+acad <- mm[, 4:8]
+```
+
+# Pairwise scatterplots
+
+```{r psychpairs}
+ggpairs(psych)
+```
+
+```{r acadpairs}
+ggpairs(acad)
+```
+
+# pairwise correlations between data types
+
+```{r matcor}
+matcor(psych, acad)
+```
+
+# canonical correlations
+
+```{r ccs}
+cc1 <- cc(psych, acad)
+cc1$cor
+```
+
+# raw canonical coefficients
+```{r cc.coefs}
+cc1[3:4]
+```
+
+# canonical loadings
+
+These are correlations between the observed data and the cannonical variables. The cannonical variables are a type of latent variable.
+
+```{r cc.coefs2}
+cc2 <- comput(psych, acad, cc1)
+cc2[3:6]
+```
+
+# standardized psych canonical coefficients diagonal matrix of psych sd's
+
+```{r psychsds}
+s1 <- diag(sqrt(diag(cov(psych))))
+s1 %*% cc1$xcoef
+```
+
+
+
+# standardized acad canonical coefficients diagonal matrix of acad sd's
+```{r acadsds}
+s2 <- diag(sqrt(diag(cov(acad))))
+s2 %*% cc1$ycoef
+```
+
+# see website
+
+https://stats.idre.ucla.edu/r/dae/canonical-correlation-analysis/
+for more details on how to write up results
+
+
+
+
+# code from Reference Manual PMA.pdf
+
+```{r pma}
+data(breastdata)
+attach(breastdata)
+names(breastdata)
+```
+
+```{r sumdat}
+dim(breastdata$dna)
+length(breastdata$chrom)  #chromosome
+length(breastdata$nuc)    #nucleotide position of CGH spot
+cbind(breastdata$chrom,breastdata$nuc)[1:6,]
+dim(breastdata$rna)
+PlotCGH(dna[,1], chrom=chrom, main="Sample 1", nuc=nuc)
+```
+
+
+Example involving the breast cancer data: gene expression + CGH
+CCA requires:   samples are rows, columns are features
+
+Let's use type="ordered" for the CNA data.
+
+```{r ccapermute}
+set.seed(22)
+dna <- t(dna)    
+rna <- t(rna)
+perm.out <- CCA.permute(x=rna,z=dna[,chrom==1],typex="standard", typez="ordered",nperms=5,
+                        penaltyxs=seq(.02,.7))
+```
+
+We run CCA using all gene exp. data, but CGH data on chrom 1 only.
+
+```{r chr1}
+print(perm.out)
+out <- CCA(x=rna,z=dna[,chrom==1], typex="standard", typez="ordered",penaltyx=perm.out$bestpenaltyx,
+v=perm.out$v.init, penaltyz=perm.out$bestpenaltyz, xnames=substr(genedesc,1,20),
+znames=paste("Pos", sep="", nuc[chrom==1])) 
+```
+
+Save time by inputting lambda and v
+
+```{r output}
+print(out) 
+#print(out, verbose = TRUE) 
+```
+
+```{r chr}
+print(genechr[out$u!=0]) 
+```
+
+Cool! The genes associated w/ gain or loss on chrom 1 are located on chrom 1!!
+
+```{r plotthem}
+par(mfrow=c(1,1))
+PlotCGH(out$v, nuc=nuc[chrom==1], chrom=chrom[chrom==1],
+main="Regions of gain/loss on Chrom 1 assoc'd with gene expression")
+```
+
+```{r si}
+sessionInfo()
+```

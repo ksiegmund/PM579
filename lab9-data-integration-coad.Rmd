@@ -1,0 +1,493 @@
+---
+title: "Data Integration using The Cancer Genome Atlas (TCGA)"
+author: "ks"
+date: "July 24, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Colon Adenocarcinoma (COAD) data  
+
+I'm using HumanMethylation27 data since these samples have the most complete annotation (e.g. tumor site, CIMP-designation, tumor stage). I previously downloaded these data along with patient clinical information from the package: curatedTCGAData. I got the RNAseq data from GEO: GSE62944. 
+```{r LOADanalysisdataset}
+if (!require('pls')) install.packages('pls')
+if (!require('PMA')) install.packages('PMA')
+library(pls)
+library(PMA)
+library(edgeR)
+library(limma)
+library(genefilter)
+library(matrixStats)
+
+dataDir = c("~kims/Google Drive File Stream/My Drive/Teaching/PM579/PM579-Su2019/Data/COAD")
+load(file.path(dataDir,"coadhm27-AnalysisSet.rda"))
+load(file.path(dataDir,"coadhm27-gex-AnalysisSet.rda"))
+load(file.path(dataDir,"coadhm27-clindat-AnalysisSet.rda"))
+```
+
+How will we explore the data?
+
+```{r dnam}
+colnames(coad)[1:4]
+dim(coad)
+```
+
+```{r rnaseq}
+colnames(rseq)[1:4]
+dim(rseq)
+```
+
+```{r clincdat}
+rownames(cDataMAE)[1:4]
+dim(cDataMAE)
+```
+
+First, I will change the column names from DNA methylation data set (coad) from the sample ID to the patient ID to use the same naming convention used in the RNAseq and Clinical variable data sets. Then I will check that our data matrices are sorted identically by patient ID.
+```{r datacheck}
+  colnames(coad)[1:4]
+  colnames(coad)<-substring(colnames(coad),1,12)
+  identical(colnames(rseq),colnames(coad))
+  identical(colnames(rseq),rownames(cDataMAE))
+```
+
+Let's summarize some clinical variables to become familiar with the distributions of the data. Important variables in colon cancer include: sex (gender.x), age (years_to_birth), MSI status (MSI_status), methylation subtype (methylation_subtype), expression subtype (expression_subtype).
+
+```{r summarizeClinVar}
+    table(cDataMAE$mysex)
+    table(cDataMAE$MSI_status,
+        cDataMAE$methylation_subtype)
+```
+
+```{r agebysex}
+   boxplot(years_to_birth~mysex,
+           data=cDataMAE,ylab="age")
+```
+
+```{r agebymethyl}
+   boxplot(years_to_birth~methylation_subtype,
+           data=cDataMAE,ylab="age")
+```
+
+Is there any reason to filter DNAm features? Why?
+
+
+
+
+
+
+
+
+```{r FilterDNAm}   
+# require no missing values
+  filt1<- complete.cases(coad)
+  table(filt1)
+  coad<- coad[filt1,]
+```
+
+We omit 527 features with missing Beta values.
+
+Let's also filter in IQR to remove features that show most variation in middle quartile of the data (sds are easily influenced by outliers).
+```{r measureIQR}
+iqr<- matrixStats::rowIQRs(coad)
+summary(iqr)
+```
+
+```{r filtDNAm2}
+  dnamsubset<-coad[iqr>0.05,]
+  dim(dnamsubset)
+```
+
+Can we find biological structure in these data from the DNA methylation data alone?  How might we investigate this?
+
+
+
+
+```{r checkDataDistn2}
+for (i in 1:4) hist(dnamsubset[i,])
+```
+
+These data are bounded between 0 and 1.  We often transform such data to the logit scale before assuming normality (log2(x/(1-x))).
+
+```{r Mvals}
+mvals <- log2(dnamsubset/(1-dnamsubset))
+```
+
+```{r dnammdsplot}
+cimplabel <- sub('CIMP.',"",cDataMAE$methylation_subtype)
+cimplabel <- sub('Cluster',"",cimplabel)
+limma::plotMDS(mvals,labels=cimplabel,
+               col=unclass(factor(cDataMAE$mysex)))
+```
+[Comment:  I was surprised how important it was to convert these data to mvals.  Try running this on dnamsubset.]
+
+Sex and DNA methylation subtype both explain a lot of the main variation in the DNA methylation data.  Let's go check to see if we have probes on the X chromosome in this analysis. If we do, we should delete them so they do not overwhelm other biological signals.
+
+```{r getchrominfo}
+ilmnid <- rownames(dnamsubset)
+  # Read our manifest for Feature Information
+  manifest<-read.delim(file.path(dataDir,"Infinium methylation Manifest 20100913.txt"))
+  idx<- which(is.element(manifest$IlmnID..current.version.of.manifest.,ilmnid))
+  
+  manifest<-manifest[idx,]
+```
+  
+```{r tabchrs}
+table(manifest$Chr)
+```
+
+```{r dnammdsplot2}
+dnasubset2 <- dnamsubset[!is.element(manifest$Chr,c("X","Y")),]
+mvals <- log2(dnasubset2/(1-dnasubset2))
+```
+
+```{r mdsnoXY}
+limma::plotMDS(mvals,labels=cimplabel,
+               col=unclass(factor(cDataMAE$mysex)))
+```
+
+The large sex effect is gone, but we see a clear signal with DNA methylation subtype (which is not surprising as DNAm substype was defined from a cluster analysis of the DNA methylation data!)
+
+Now let's go prepare the RNAseq data. Are the library sizes for the RNAseq data approximately equal?
+```{r rseqlibsizes}
+lib.size<-apply(rseq,2,sum)
+summary(lib.size)
+max(lib.size)/min(lib.size)
+```
+
+Wow! Those vary alot.  Let's compute counts per million for each library and see the effect on raw counts.
+```{r cpmy}
+cpmy<-edgeR::cpm(rseq)
+par(mfrow=c(1,2))
+plot(lib.size,rseq[5,])
+plot(lib.size,cpmy[5,])
+```
+It appears that normalizing the library sizes to 10^6 counts was enough to remove the association between expression level and library size.
+
+Now let's filter genes with little variation in expression.
+What does the following filter do, and why might we use it?
+```{r FilterGex}
+  filt<-which( apply(cpmy>1,1,sum) > 0.1*ncol(cpmy) )
+  length(filt)
+  cpmy<-cpmy[filt,]
+  dim(cpmy)
+```
+
+[Check: what is the filter that was implemented in the paper from HW3?]
+
+
+How might we go about a sparse CCA analysis? What is the first step?   (HINT:  How are these data distributed?)
+```{r checkDataDistn}
+
+
+
+```
+
+
+
+```{r transfdata}
+  lcpmy <- log2(cpmy+1)
+```
+
+Now I want to run CCA. I do it on standardized data sets.
+```{r stdize}
+  X <- pls::stdize(t(mvals))
+  Z <- pls::stdize(t(lcpmy))
+```
+
+```{r CCAPermute}
+set.seed(23)
+perm.out <- CCA.permute(X,Z,typex="standard",
+                        typez="standard",
+                        penaltyxs=seq(.1,.87,len=10),   
+                        penaltyzs=seq(.1,.87,len=10),
+                        nperms=10)
+print(perm.out)
+```
+
+```{r plot}
+plot(perm.out)
+```
+
+These parameters are just an example, and the results may be sensitive to the number of permutations.
+
+```{r BestPenaltyFit}
+out <- CCA(X,Z,typex="standard",typez="standard",K=3,
+           penaltyx=perm.out$bestpenaltyx,
+           penaltyz=perm.out$bestpenaltyz, v=perm.out$v.init)
+print(out)
+```
+
+```{r varnames}
+names(out)
+```
+
+Let's check that we can compute the same correlations from our data.
+```{r computecor}
+cc1u<- X%*%out$u[,1]
+cc1v<- Z%*%out$v[,1]
+cor(cc1u,cc1v)
+
+cc2u<- X%*%out$u[,2]
+cc2v<- Z%*%out$v[,2]
+cor(cc2u,cc2v)
+```
+
+What is something we can do to interpret the variables cc1u, cc1v, cc2u, cc2v?
+
+```{r annot}
+
+
+
+
+
+
+```
+
+### CC1 is correlated with 'methylation_subtype'.
+
+```{r plotcov2}
+   par(mfrow=c(2,2))
+   plot(cc1u,cc1v)
+   boxplot(split(cc1u,cDataMAE$methylation_subtype),ylab="cc1u",
+           main="DNAm")
+   boxplot(split(cc1v,cDataMAE$methylation_subtype),ylab="cc1v",
+           main="DNAm")
+   boxplot(split(cc1v,cDataMAE$MSI_status),ylab="cc1v",
+           main="Gex")
+```
+
+What about it's correlation with purity?
+
+```{r cvsAndpurity}
+cor.test(cc1u,cDataMAE$abs_purity)
+cor.test(cc1v,cDataMAE$abs_purity)
+
+cor.test(cc2u,cDataMAE$abs_purity)
+cor.test(cc2v,cDataMAE$abs_purity)
+```
+
+Yes! it's correlated with tumor purity!  Is purity correlated with our clinical variables? I did this with regression analysis and it seems not to be associated. So, purity is unlikely a confounder, but it is
+causing lots of variability that we captured in our CCA analysis. Let's remove the variability due to purity, and then repeat CCA analysis. I can do this with regression analysis.  
+
+I'm going to adjust all features for tumor purity.
+```{r eBayes}
+  library('limma')
+  design=model.matrix(~cDataMAE$abs_purity)
+  head(design)
+  colnames(design) <-c("Intercept","purity") 
+
+vfit <- lmFit(lcpmy, design)
+efit <- eBayes(vfit)
+fitted<- efit$coefficients%*%t(design)
+lcpmy.resid<-lcpmy - fitted
+
+vfit <- lmFit(mvals, design)
+efit <- eBayes(vfit)
+fitted<- efit$coefficients%*%t(design)
+mvals.resid<-mvals - fitted
+```
+
+
+```{r getMats}
+  X <- pls::stdize(t(mvals.resid))
+  Z <- pls::stdize(t(lcpmy.resid))
+```
+
+```{r CCAPermuteResid}
+set.seed(654)
+perm.out <- CCA.permute(X,Z,typex="standard",
+                        typez="standard",
+                         penaltyxs=seq(.02,.47,len=10),   
+                        penaltyzs=seq(.02,.47,len=10),
+                        nperms=10)
+print(perm.out)
+plot(perm.out)
+```
+
+This time we get a maximum and only ~5% of the features are selected.
+
+```{r BestPenaltyFitResid}
+out <- CCA(X,Z,typex="standard",typez="standard",K=3,
+           penaltyx=perm.out$bestpenaltyx,
+           penaltyz=perm.out$bestpenaltyz, v=perm.out$v.init)
+print(out)
+```
+
+How many features are shared by u1,u2,u3? v1,v2,v3?
+
+```{r computecorResidu}
+limma::vennDiagram(ifelse(out$u!=0,1,0))
+```
+
+There is only a little overlap in DNAm features belonging to different cannonical variables.
+
+```{r computecorResidv}
+limma::vennDiagram(ifelse(out$v!=0,1,0))
+```
+Groups 1 & 3 are overlapping, but group 2 genes is primarily different.
+
+```{r computecorResid}
+cc1u<- X%*%out$u[,1]
+cc1v<- Z%*%out$v[,1]
+cor(cc1u,cc1v)
+```
+
+```{r annotcc1}
+cor.test(cc1u,cDataMAE$abs_purity)
+cor.test(cc1v,cDataMAE$abs_purity)
+
+t.test(cc1u~cDataMAE$mysex)
+t.test(cc1v~cDataMAE$mysex)
+
+cor.test(cc1u,cDataMAE$years_to_birth)
+cor.test(cc1v,cDataMAE$years_to_birth)
+
+summary(lm(cc1u~cDataMAE$expression_subtype))
+summary(lm(cc1v~cDataMAE$expression_subtype))
+```
+
+Now it's interesting that sex, age, and expression_subtype are all still correlated with these linear combinations. That suggests biological differences in males and females, by age, and expression_subtype.
+
+### CC1 is correlated with 'methylation_subtype'.
+
+```{r plotcov3}
+   par(mfrow=c(2,2))
+   plot(cc1u,cc1v)
+   boxplot(split(cc1u,cDataMAE$methylation_subtype),ylab="cc1u",
+           main="DNAm")
+   boxplot(split(cc1v,cDataMAE$methylation_subtype),ylab="cc1v",
+           main="DNAm")
+   boxplot(split(cc1v,cDataMAE$MSI_status),ylab="cc1v",
+           main="Gex")
+```
+
+These cannonical variables are correlated with all these variables, but the association with CIMP is the largest.
+```{r annotcorFem}
+summary(lm(cc1u~mysex+years_to_birth+expression_subtype,
+                  data=cDataMAE))
+summary(lm(cc1v~mysex+years_to_birth+expression_subtype,
+                  data=cDataMAE))
+```
+
+### Which DNAm features are picked in CCU1?
+
+Hinoue et al. published a paper identifying 415 CIMP-H-predicting (CHP) features on the HumanMethylation450 array. Let's grab those and see if ccu1 features are enriched for CHP features.
+
+```{r getDNAmFeatures}
+  ilmnid<-colnames(X)[out$u[,1]!=0]
+
+  # Read our manifest for Feature Information
+#  manifest<-read.delim(file.path(dataDir,"Infinium methylation Manifest 20100913.txt"))
+  idx<- which(is.element(manifest$IlmnID..current.version.of.manifest.,ilmnid))
+  
+  manifest<-manifest[idx,]
+  
+  SYMBOL<-manifest$Symbol_UPDATED..20100111.
+  GENEID<-manifest$GeneID_Updated..20100111.
+  annotDNAm<-cbind.data.frame(ilmnid,GENEID,SYMBOL)
+  annotDNAm
+```
+
+### Let's test if this list is enriched for CIMP-H predicting features. 
+```{r CIMPgenes}
+cimpFeature<-read.delim(file.path(dataDir,"Hinoue_Supplemental_Table4CIMPH.txt"))
+dim(cimpFeature)
+```
+
+```{r EnrichTest}
+# Define 'universe' using Feature names from array 
+idUniverse<-colnames(X)
+
+# identify CCU1 features in probe universe
+pos<-match(as.character(annotDNAm$ilmnid),idUniverse)
+ccu1ids<-rep("No",length(idUniverse))
+ccu1ids[pos]<-"Yes"
+ccu1ids<-factor(ccu1ids,levels=c("Yes","No"))
+
+# identify CIMP-H defining features in probe universe
+pos<-match(as.character(cimpFeature$Probe.ID),idUniverse)
+cimphids<-rep("No",length(idUniverse))
+cimphids[pos]<-"Yes"
+cimphids<-factor(cimphids,levels=c("Yes","No"))
+
+etest<-table(cimphids,ccu1ids)
+etest
+prop.table(etest,margin=2)
+fisher.test(etest)$p
+```
+
+
+#### Yes. 160 (38%) of the 424 ccu1 DNAm features identify CIMP-H tumors. From the remaining 9354 features, only 2% identify CIMP-H tumors.
+
+### What genes (expression) contribute to CCV1? 
+
+I would expect to see genes that correlate with CIMP-H status, or equivalently, genes that are differentially expressed between CIMP-H and non-CIMP tumors. I recently conducted such an analysis. I ran a differential expression analysis of CIMP-H individuals vs those in clusters 3 & 4. Let's see if the genes I identified are enriched in the cannonical variable from the gene expression data.
+
+
+```{r getGexFeatures}
+  gexSYMBOL<-colnames(Z)[out$v[,1]!=0]
+  length(gexSYMBOL)
+```
+
+Those are the genes variably expressed and correlated with variation in the DNA methylation data.  To define my 'gene universe' I want the genes that are common to the differential expression analysis and the CCA analysis (matrix Z). Here are the genes from the differential expression analysis.
+
+```{r DEXtable}
+cimpHpredgenes<-read.csv(file.path(dataDir,"AllCimpHvsCl34.csv"))
+head(cimpHpredgenes)
+dim(cimpHpredgenes)
+```
+
+Here are the names of genes also appearing in the CCA analysis.
+```{r CommonGenes}
+pos<-which(is.element(colnames(Z),
+                       cimpHpredgenes$SYMBOL))
+commongenenames<- colnames(Z)[pos]
+```
+
+Now restrict the list of genes from the differential expression analysis to those common to both analyses, and call it the gene universe. 
+```{r GeneUniverse}
+guniverse<-cimpHpredgenes[match(commongenenames,
+                                 cimpHpredgenes$SYMBOL),]
+# drop genes in ccv1 that are not in our universe
+gexSYMBOLu <- gexSYMBOL[match(commongenenames,
+                              gexSYMBOL)]
+gexSYMBOLu <- gexSYMBOLu[!is.na(gexSYMBOLu)]
+```
+
+```{r GSEA}
+pos<-match(gexSYMBOLu,guniverse$SYMBOL)
+myset<-rep(0,length(guniverse$SYMBOL))
+myset[pos]<-1
+summary(lm(guniverse$t~myset))
+summary(lm(abs(guniverse$t)~myset))
+```
+
+### The mean t-stat from my features in ccv1 does not = 0. 
+Let's plot it.
+```{r PlotGSEA}
+par(mfrow=c(1,2)) 
+plot(density(guniverse$t),main="t stat")
+for(i in 1:length(pos))  
+    segments(guniverse$t[pos][i],0,guniverse$t[pos][i],0.01,col=2)
+hist(guniverse$P.Value,main="p-value")
+```
+
+```{r means}
+mean(guniverse$t)
+mean(guniverse$t[myset==0])
+mean(guniverse$t[myset==1])
+plot(density(guniverse$t),main="t stat")
+for(i in 1:length(pos))  
+    segments(guniverse$t[pos][i],0,guniverse$t[pos][i],0.01,col=2)
+
+tb <- table(guniverse$adj.P.Val<0.05,myset)
+tb
+fisher.test(tb)
+```
+
+```{r SessionInfo}
+sessionInfo()
+```
