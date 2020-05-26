@@ -1,0 +1,251 @@
+---
+title: "Dimension Reduction Techniques"
+author: "K Siegmund"
+date: "May 27, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# {.tabset}
+
+## R Libraries
+
+```{r rlibraries}
+if (!require(ggplot2)) install.packages("ggplot2")
+if (!require(plotly)) install.packages("plotly")
+if (!require(Rtsne)) {install.packages("Rtsne")}
+if (!require(devtools)) install.packages("devtools")
+if (!require(PMA)) install.packages("PMA")
+if (!require(gg3D)) devtools::install_github("AckerDWM/gg3D")
+library(limma)
+library(ggplot2)
+library(matrixStats)
+library(plotly)
+library(Rtsne)
+library(devtools)
+library(gg3D)
+library(PMA)
+```
+
+
+```{r loaddata}
+load("data/JBC 2012/jbcdat.rda")
+```
+
+## 2-D MDS 
+
+The function plotMDS was written specifically for gene expression data so it expects the data to be formatted with genes in the rows and samples in the columns. It also has a default variable selection filter that we'll discuss in more detail later. The default is to select 500 features.
+```{r MDSplot,fig.cap='MDS plot of 24 gene expression arrays using 500 most variable features.'}
+limma::plotMDS(jbcdat$E,pch=16,
+        col=unclass(jbcdat$targets$type),
+        xlim = c(-1.5,1.5), ylim=c(-1,1),
+        main="MDS plot") #color by type
+legend(-1.5,1,levels(jbcdat$targets$type),
+        pch=16,col=order(levels(jbcdat$targets$type)),
+       cex=.75)
+```
+
+## 2-D PCA
+
+The PCA analysis expects data formatted in the traditional format, with samples in the rows and features in the columns. 
+```{r pca}
+# transpose the expression matrix
+tE <- t(jbcdat$E)
+dim(tE)
+```
+
+Scaling of the data is important for PCA. A PCA of the covariance matrix is different than a PCA of the correlation matrix (using standardized variables). Gene expression data can have outliers so we will use a robust measure to scale the data. I'll use median absolute deviation (mad).
+
+```{r sdzpca}
+sdztE <- scale(tE,center=TRUE,scale=
+                 matrixStats::colMads(tE))
+```
+
+In our summary variables, let's try to capture the biological variation between treatment groups when we reduce the dimension. If successful, our treatment groups might be visible on just a few variables. Differential expression between treatment groups should increase the variability of the expression values when measured across all samples. Let's rank genes on variation and pick the 500 most variable genes for the PCA.
+
+```{r top500}
+fmad  <- matrixStats::rowMads(jbcdat$E)
+rfmad <- rank(-fmad)
+fidx <- which(rfmad <= 500)
+```
+
+```{r top500pca,fig.cap='PCA of 24 gene expression arrays using 500 most variable features.'}
+my.pca <- prcomp(sdztE[,fidx],retx=TRUE)
+dfx <- as.data.frame(my.pca$x)
+
+ggplot(dfx,  aes(x=PC1, y=PC2, color = jbcdat$targets$type )) + geom_point(size=2.5) +
+  labs(color="Treatment")
+```
+
+We do see the samples from the different treatment groups cluster separately. Would we still see this if we use all 47k+ genes?
+
+```{r pcaall, fig.cap='PCA of 24 gene expression arrays using 47,231 features.'}
+my.pca <- prcomp(sdztE,retx=TRUE)
+dfx <- as.data.frame(my.pca$x)
+
+ggplot(dfx,  aes(x=PC1, y=PC2, color = jbcdat$targets$type )) + geom_point(size=2.5) + labs(color="Treatment")
+```
+
+No! We don't. Why not? 
+
+
+
+## tSNE
+
+```{r tsne}
+# Set a seed if you want reproducible results
+set.seed(48)
+tsne_out <- Rtsne::Rtsne(sdztE,pca=FALSE,perplexity=7,theta=0.0) 
+dfy <- as.data.frame(tsne_out$Y)
+```
+
+```{r tsneplot, echo=FALSE, fig.cap='tSNE of 24 gene expression arrays.'}
+# Show the objects in the 2D tsne representation
+ggplot(dfy,  aes(x=V1, y=V2, color = jbcdat$targets$type )) + geom_point(size=2.5) +
+  theme(text = element_text(size=18))
+```
+
+What is different about this figure compared to the PCA?
+
+And, let's check the robustness of this result using a different starting seed for the random number generator.
+```{r tsne2}
+# Set a seed if you want reproducible results
+set.seed(45)
+tsne_out <- Rtsne::Rtsne(sdztE,pca=FALSE,perplexity=7,theta=0.0) 
+dfy <- as.data.frame(tsne_out$Y)
+```
+
+```{r tsneplot2, echo=FALSE, fig.cap='2nd tSNE of 24 gene expression arrays.'}
+# Show the objects in the 2D tsne representation
+ggplot(dfy,  aes(x=V1, y=V2, color = jbcdat$targets$type )) + geom_point(size=2.5) +
+  theme(text = element_text(size=18)) +
+  labs(color="Treatment")
+```
+
+One point in siCBP_16h is no longer a neighbor of the others in it's tretment group.
+
+## 3-D PCA 
+
+Let's see if the PCA plot can separate the overlapping groups if we consider more dimensions.
+
+```{r 3dggplot, echo=FALSE, fig.cap='3-Dimensional PCA of 24 gene expression arrays (500 most variable features).'}
+my.pca <- prcomp(sdztE[,fidx],retx=TRUE)
+dfx <- as.data.frame(my.pca$x)
+
+ggplot(dfx, aes(x=PC1, y=PC2, z=PC3, color=jbcdat$targets$type)) + theme_void() +
+  axes_3D() +
+  stat_3D(size=2.5) +
+  labs(color="Treatment")
+```
+
+It does!   And I'm including a figure using the plotly library. Check out what it can do.
+
+```{r 3dplotly}
+plot_ly(x=dfx$PC1, y=dfx$PC2, z=dfx$PC3, type="scatter3d", mode="markers", color=jbcdat$targets$type)
+```
+
+## Sparse PCA
+
+I will use the PMA package to perform sparse PCA described earlier.
+
+The default for sparse PCA is to **not** require the sparse PCs to be orthogonal. I'm going to plot the data using this default, and then see whether the results would be different if orthagonality is enforced during the dimension reduction step.
+
+```{r sparsePCAcv}
+set.seed(48)
+cv.out <- SPC.cv(sdztE, sumabsvs=seq(1.2, 25, len=10))
+print(cv.out)
+plot(cv.out)
+```
+
+The CV error is decreasing, and the software suggest we pick the maximum number of variables here. I think that's allowing too many features, so I'll pick a number closer to the 500 we've been using for the figures earlier. This is achieved by setting sumabsv=14. 
+
+```{r spc}
+spca.out <- SPC(sdztE,sumabsv=14, K=3)
+dfu <- as.data.frame(spca.out$u)
+```
+
+```{r plotspc, echo=FALSE, fig.cap='Top 2 sparse principal components of 24 gene expression arrays.'}
+ggplot(dfu,  aes(x=V1, y=V2, color = jbcdat$targets$type )) + geom_point(size=2.5) + labs(color="Treatment")
+```
+
+If we restrict the search to allow the ~600 genes with highest signal, we get similar cluster signal that we found from a PCA on the 500 most variable genes.
+
+```{r 3dggplot2, echo=FALSE, fig.cap='Top 3 sparse principal components of 24 gene expression arrays.'}
+ggplot(dfu, aes(x=V1, y=V2, z=V3, color=jbcdat$targets$type)) + 
+  theme_void() +
+  axes_3D() +
+  stat_3D(size=2.5) +
+  labs(color="Treatment")
+```
+
+The 3D picture actually identifies the same 3 clusters identified with the variance filter, except the outlier point that appears in the second PC hides it somewhat.
+
+We can see this more clearly with the plotly library. [Using the word 'plotly' is an example of 'jargon' that you should avoid when writing up reports.]
+
+```{r 3dplotlydfu}
+plot_ly(x=dfu$V1, y=dfu$V2, z=dfu$V3, type="scatter3d", mode="markers", color=jbcdat$targets$type)
+```
+
+```{r plotspcv1v3, echo=FALSE, fig.cap='Scatterdiagram of sparse PC1 vs PC3 in 24 gene expression arrays.'}
+ggplot(dfu,  aes(x=V1, y=V3, color = jbcdat$targets$type )) + geom_point(size=2.5) + labs(color="Treatment")
+```
+
+The third cluster is not visible if we estimate orthogonal PCs. 
+```{r orthspc}
+out.orth <- SPC(sdztE,sumabsv=14, K=3, orth=TRUE)
+dfuo <- as.data.frame(out.orth$u)
+```
+```{r plotspcdfuo, echo=FALSE, fig.cap='Scatterdiagram of sparse PC1 vs PC3 in 24 gene expression arrays with orthogonality between PCs enforced.'}
+ggplot(dfuo,  aes(x=V1, y=V3, color = jbcdat$targets$type )) + geom_point(size=2.5) + labs(color = "Treatment")
+```
+
+Here I jumped directly to the PC1 vs PC3 figure, but an inspection of the 3D scatterplot would not help us visualize any more subgroups. We can inspect the output again using plotly if we want.
+
+#```{r 3dplotlydfuo}
+#plot_ly(x=dfuo$V1, y=dfuo$V2, z=dfuo$V3, type="scatter3d", mode="markers", #color=jbcdat$targets$type)
+#```
+
+Instead I'm going to compare the estimated sparse PCs with and without the additional orthogonality constraint. 
+
+```{r 3PCs}
+pairedPC1 <- data.frame(PC1=dfu$V1,orthPC1=dfuo$V1)
+pairedPC2 <- data.frame(PC2=dfu$V2,orthPC2=dfuo$V2)
+pairedPC3 <- data.frame(PC3=dfu$V3,orthPC3=dfuo$V3)
+```
+
+```{r pc1s,echo=FALSE, fig.cap='Comparison of PC1 in analysis with and without orthogonality constraint (Y axis & X axis, respectively).'}
+ggplot(pairedPC1,aes(x=PC1,y=orthPC1, color = jbcdat$targets$type)) + geom_point(size=2.5) +
+  labs(color="Treatment")
+```
+
+```{r plotPC2s, echo=FALSE,fig.cap='Comparison of PC2 in analysis with and without orthogonality constraint (Y axis & X axis, respectively).'}
+ggplot(pairedPC2,aes(x=PC2,y=orthPC2, color = jbcdat$targets$type)) +
+  geom_abline(intercept=0,slope=1) + 
+  geom_point(size=2.5) +
+  labs(color="Treatment")
+```
+
+```{r plotPC3s, echo=FALSE,fig.cap='Comparison of PC2 in analysis with and without orthogonality constraint (Y axis & X axis, respectively)'}
+ggplot(pairedPC3,aes(x=PC3,y=orthPC3, color = jbcdat$targets$type)) +
+  geom_abline(intercept=0,slope=1) + 
+  geom_point(size=2.5) +
+  labs(color="Treatment")
+```
+
+PC1 is identical in both runs (orthogonalized sparse PCs or not). The correlation in sparse PC estimates ('ordinary' vs orthogonal) is very high for PC2, but in PC3 not so much.
+
+```{r corPCs}
+cor(pairedPC2)
+cor(pairedPC3)
+```
+
+Our ability to capture 3 treatment clusters using the sparse PCs without the additional orthogonalilty constraints, supports this model being the default setting.
+
+## sessionInfo
+
+```{r sessionInfo}
+sessionInfo()
+```
+
