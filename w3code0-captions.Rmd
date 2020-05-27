@@ -1,0 +1,87 @@
+---
+title: "Numbered Figure Captions"
+author: "K Siegmund"
+date: "`r Sys.Date()`"
+output: bookdown::html_document2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r rlibraries, echo=FALSE}
+library(bookdown)
+library(ggplot2)
+```
+
+```{r loaddata}
+load("data/JBC 2012/jbcdat.rda")
+dim(jbcdat$E)
+```
+
+# Principal Components Analysis
+
+```{r 2dpca,fig.cap='PCA of 24 gene expression arrays.'}
+tE <- t(jbcdat$E)
+
+my.pca <- prcomp(tE,center=TRUE,scale=matrixStats::colMads(tE),
+                 retx=TRUE)
+dfx <- as.data.frame(my.pca$x)
+
+sp <- ggplot(dfx,  aes(x=PC1, y=PC2, 
+                       color = jbcdat$targets$type )) + 
+        geom_point(size=2.5) 
+sp + theme(text = element_text(size=20),
+           legend.text = element_text(size=12),
+           legend.title = element_text(size=12))  + 
+    labs(color="Treatment")
+```
+
+Now let's repeat the analysis on just the top 500 variable genes. I will use median absolute deviation for measuring variability.
+
+```{r 2dpca2,fig.cap='PCA of 24 gene expression arrays (500 most variable genes).'}
+fmad  <- matrixStats::rowMads(jbcdat$E)
+rfmad <- rank(-fmad)
+fidx <- which(rfmad <= 500)
+
+subsetE <- tE[,fidx]
+
+my.pca <- prcomp(subsetE,center=TRUE,
+                 scale=matrixStats::colMads(subsetE),retx=TRUE)
+dfx <- as.data.frame(my.pca$x)
+
+sp <- ggplot(dfx,  aes(x=PC1, y=PC2, 
+                       color = jbcdat$targets$type )) + 
+        geom_point(size=2) + 
+      labs(color="Treatment")
+sp
+```
+
+Why might this show better clustering?
+
+# Multi-dimensional Scaling
+
+```{r MDSplot,fig.cap='MDS plot of 24 gene expression arrays (500 features, see methods for details).'}
+limma::plotMDS(jbcdat$E,pch=16,
+        col=unclass(jbcdat$targets$type),
+        xlim = c(-1.5,1.5), ylim=c(-1,1),
+        main="MDS plot") #color by type
+legend(-1.5,1,levels(jbcdat$targets$type),
+        pch=16,col=order(levels(jbcdat$targets$type)),
+       cex=.75)
+```
+
+This result resembles the PCA result, but it can be different due to the different variable selection method. Let's investigate the difference.
+
+```{r MDShelp}
+?plotMDS
+```
+
+MDS is based on a pairwise dissimilarity matrix of the samples. Pairwise dissimilarities are computed for each pair of samples. The default setting for feature filtering is to perform separate feature filtering for all pairs of samples.
+
+# Session info
+
+```{r sessionInfo}
+sessionInfo()
+```
+
