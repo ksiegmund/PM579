@@ -1,0 +1,122 @@
+---
+title: "Feature Filtering"
+author: "ks"
+date: "5/27/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!require(ggplot2)) {install.packages("ggplot2")}
+library(ggplot2)
+library(matrixStats)
+```
+
+Let's use some real data to simulate what the gene expression data set might look like for the class activity.  For convenience, we'll use the prostate cancer data to inform the distribution of means and variances for our study.  
+
+[Aside: Since our hypothetical study is described to measure gene expression in blood, we might prefer to use a data set from blood as our guide. However, I won't worry about that here since I just want to illustrate a statistical property of variable filtering that should translate across different tissues.]
+
+## Prostate Cancer Summary Statistics
+
+```{r loadjbc}
+load("data/JBC 2012/jbcdat.rda")
+
+mn_e <- rowMeans(jbcdat$E)
+sds_e <- matrixStats::rowSds(jbcdat$E)
+```
+
+Now I'm going to simulate normally distributed data for the number of genes on the array, with mean and standard deviation set to the estimated mean and standard deviations, respectively. This is reasonable for the log2 transformed data.
+
+```{r simdat}
+ng <- length(mn_e)
+set.seed(40)  # This sets a reproducible starting point 
+                # for our random number generator
+simdat <- replicate(96,rnorm(n = ng, mean = mn_e, sd = sds_e))
+```
+
+Here, I have assumed all features on the array are independent, which is NOT TRUE! Still, I can still learn from this simplified situation.
+
+Now, I'm going to create differential expression in 1000 of the genes. For those genes, I'm going to just add the constant 2.5 x Sds in the second half (48) of the samples. Those will be the samples after taking the "Magic Potion". Adding 2.5 Sds is a big effect, but I want to make the difference in expression easy to find for this simulation. We can discuss the effect of this assumption (large effect) later.
+
+```{r difgex}
+set.seed(20)  # set the seed when generating random numbers
+idx <- sample(c(1:ng),1000)
+potion <- factor(rep(c("Placebo", "Magic"), each=48))
+simdat[idx,48:96] <- simdat[idx,48:96]+2.5*sds_e[idx]
+```
+
+Here's the density plot by treatment (magic potion vs placebo) for 1 differentially expressed gene.
+
+```{r dgedensity}
+df <- data.frame(gex = simdat[idx[1],],
+                 potion=potion)
+ggplot(df, aes(x=gex, fill=potion)) +
+  geom_density()
+```
+
+I'm going to create a data set to store the gene standard deviations, that will be our filtering variable, and an indicator variable telling us which genes are differentially expressed.
+
+```{r dfstats}
+simSds <- matrixStats::rowSds(simdat)
+truedge <- rep(0,ng)
+truedge[idx] <- 1
+
+dfstats <- data.frame(lnsds = log(simSds),
+                 truedge = truedge)
+table(dfstats$truedge)
+```
+
+The variable 'truedge' indicates whether or not the gene is differentially expressed or not.
+
+What fraction of genes are differentially expressed?
+```{r deg}
+mean(dfstats$truedge)
+```
+
+## Feature selection
+
+Q1. If we select 1000 genes at random, how many genes do we expect will be differentially expressed genes?   
+
+
+Let's sample 1000 genes at random and see how many are differentially expressed in our random sample.
+
+```{r rsamp}
+set.seed(200)
+ss <- sample(c(1:ng),1000)
+ssgp <- rep(0,ng)
+ssgp[ss] <- 1
+table(dfstats$truedge[ss])
+```
+
+Is that close to what was expected?  
+
+The distribution of standard deviations in the randomly sampled features should resemble the distribution in the population.
+```{r boxplotreg}
+ boxplot(dfstats$lnsds~ssgp)
+```
+
+Yes, they do.
+
+
+Compared to Question 1, if I select the *1000 most variable genes*, would I expect to find  
+1. the same number differentially expressed  
+2. more   
+3. fewer  
+4. you need more information
+
+```{r mostvar}
+rsds <- rank(-dfstats$lnsds)
+fidx <- which(rsds <= 1000)
+sum(dfstats$truedge[fidx])
+```
+
+
+Note: the differentially expressed genes have higher standard deviations on average than non-differentially expressed genes.
+```{r }
+ boxplot(dfstats$lnsds~truedge)
+```
+
+
+```{r sessioninfo}
+sessionInfo()
+```
