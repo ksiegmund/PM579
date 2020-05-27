@@ -101,6 +101,11 @@ tsne_out <- Rtsne::Rtsne(sdztE,pca=FALSE,perplexity=7,theta=0.0)
 dfy <- as.data.frame(tsne_out$Y)
 ```
 
+Here, I reduced the perplexity from the default (30) to 7. A rule of thumb about perplexity is that it should always be less than the sample size. The number of iterations until convergence might need adjusting. What is the default number of iterations used by this function?
+```{r help}
+?Rtsne
+```
+
 ```{r tsneplot, echo=FALSE, fig.cap='tSNE of 24 gene expression arrays.'}
 # Show the objects in the 2D tsne representation
 ggplot(dfy,  aes(x=V1, y=V2, color = jbcdat$targets$type )) + geom_point(size=2.5) +
