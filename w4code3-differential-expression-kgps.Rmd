@@ -54,9 +54,6 @@ We can print a summary of the top hits with the topTable command.
 tt <- topTable(fitgpd,n=5)
 tt
 #fitgpd$coef[rownames(tt),]
-#tt <- data.frame(pid = rownames(tt), tt)
-#write_csv(tt,"~/Google Drive File Stream/My Drive/Teaching/PM579/PM579-Su2020/Week 4_Jun10/code/tt.csv")
-# fitgpd$coef[rownames(tt),]
 ```
 
 The column named "P.Value" is for the F-test and tests the null hypothesis of the mean expression level is the same in all groups. We can find this result in our output from all F-tests by finding (matching) the position of the features by their names.
@@ -221,7 +218,7 @@ ggplot(data,  aes(x=Index, y=log2E, color = type)) + geom_point(size=2.5) + ggti
 
 This gene shows differential expression between the different knockdown treatments, but not with hormone treatment (time). 
 
-```{r genesymbols}
+```{r genesymbols2}
 jbcdat$genes["ILMN_1809583",]
 ```
 
