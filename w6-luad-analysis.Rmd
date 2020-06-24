@@ -30,6 +30,17 @@ load(file = c("data/luad.rda"))
 names(luad)
 ```
 
+Let's restrict the data set to non-missing Entrez Gene IDs.
+```{r fdata}
+table(luad$genes$ENTREZ_GENE_ID=="")
+idx <- which(luad$genes$ENTREZ_GENE_ID!="")
+luad$E <- luad$E[idx,]
+luad$genes <- luad$genes[idx,]
+dim(luad$E)
+dim(luad$E)
+table(luad$genes$ENTREZ_GENE_ID=="")
+```
+
 ```{r datasize}
 dim(luad$E)
 head(luad$targets)
