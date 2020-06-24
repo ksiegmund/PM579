@@ -18,8 +18,8 @@ library(purrr)
 
 ## Read GEO dataset
 
-GEO assession: GSE102287 has both the miRNA and mRNA data sets.
-GEO assession: GSE101929 has the mRNA data, let's start with downloading just that.
+GEO accession: GSE102287 has both the miRNA and mRNA data sets.
+GEO accession: GSE101929 has the mRNA data, let's start with downloading just that.
 
 These data are from https://pubmed.ncbi.nlm.nih.gov/29196495/
 
@@ -99,6 +99,23 @@ names(fData(geodat))
 names(fData(geodat))[c(1,11:16)]
 luad$genes <- cbind.data.frame(fData(geodat)[,c(1,11:16)])
 head(luad$genes)
+```
+
+
+```{r fdata}
+#head(luad$genes)
+table(luad$genes$ENTREZ_GENE_ID=="")
+```
+
+Let's restrict the data set to non-missing Entrez Gene IDs.
+```{r fdata}
+table(luad$genes$ENTREZ_GENE_ID=="")
+idx <- which(luad$genes$ENTREZ_GENE_ID!="")
+luad$E <- luad$E[idx,]
+luad$genes <- luad$genes[idx,]
+dim(luad$E)
+dim(luad$E)
+table(luad$genes$ENTREZ_GENE_ID=="")
 ```
 
 Now we can save the data set for later analysis.
