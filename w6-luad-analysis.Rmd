@@ -1,0 +1,404 @@
+---
+title: "Lung Cancer in AA & EA"
+author: "ks"
+date: "6/24/2020"
+output: html_document
+---
+
+
+# {.tabset}
+
+## Dataset
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loadlibraries, message=FALSE}
+library(limma)
+library(genefilter)
+library(ggplot2)
+library(survival)
+if (!require(survminer)) install.packages("survminer")
+library(survminer)
+library(gg3D)
+library(dplyr)
+```
+
+```{r loaddata}
+load(file = c("data/luad.rda"))
+names(luad)
+```
+
+```{r datasize}
+dim(luad$E)
+head(luad$targets)
+```
+
+What type of tissue are we studying and how are the samples distributed between the African American and European American subsets?
+
+```{r race}
+with(luad$targets,table(tissue,race))
+```
+
+Not all tissues are easily obtained for study. For instance, it is uncommon to have lung tissue from healthy individuals for study. These tissues labeled "N" is coming from lung cancer patients, and are better called "non-tumor lung".  And, we have more non-tumor lung samples than tumor in both EA and AA groups.   
+
+```{r raceptid}
+with(luad$targets,table(race,ptid))
+```
+
+```{r nsubj}
+length(unique(luad$targets$ptid))
+```
+
+```{r nsubjstatus}
+with(luad$targets,table(race,status))
+```
+
+Let's get the patient-level covariates... once.
+```{r ptcovar}
+idx <- which(!duplicated(luad$targets$ptid))
+ptcovar <- luad$targets[idx,c(1:4,6:9,11)]
+head(ptcovar)
+```
+
+
+````{r tabsex}
+with(ptcovar,table(gender,race))
+with(ptcovar,prop.table(table(gender,race),2))
+with(ptcovar,chisq.test(gender,race))
+```
+
+
+````{r ageboxplots}
+par(mfrow=c(1,2))
+with(ptcovar,boxplot(age~race))
+with(ptcovar,boxplot(age~gender))
+```
+
+````{r pysboxplots}
+par(mfrow=c(1,2))
+with(ptcovar,boxplot(pys~race))
+with(ptcovar,boxplot(pys~gender))
+```
+
+```{r sumvars}
+with(ptcovar , t.test(age~race))
+with(ptcovar , t.test(pys~race))
+```
+
+```{r tabstage}
+with(ptcovar,table(Stage,race))
+with(ptcovar,prop.table(table(Stage,race),2))
+```
+
+
+````{r smoking}
+with(ptcovar,boxplot(pys~race))
+```
+
+```{r  scp}
+ggplot(ptcovar,aes(x=age,y=pys,color=race)) +
+   geom_point()
+```
+
+```{r survfit}
+event <- unclass(ptcovar$status)-1
+race <- unclass(ptcovar$race)
+fit <- survfit(Surv(time,event) ~ race, data = ptcovar)
+fit
+```
+
+
+```{r km}
+ggsurvplot(fit)
+```
+
+```{r coxph}
+fitc <- coxph(Surv(time,event) ~ race, data = ptcovar)
+fitc
+```
+
+## Gene Expression Data
+
+```{r mds}
+limma::plotMDS(luad$E,pch=16,
+        col=unclass(luad$targets$race),
+        main="MDS plot") #color by race
+legend(-1.5,2,levels(luad$targets$race),
+        pch=16,col=order(levels(luad$targets$race)),
+       cex=.75)
+```
+```{r pca}
+# transpose the expression matrix
+tE <- t(luad$E)
+sdztE <- scale(tE,center=TRUE,scale=
+                 matrixStats::colMads(tE))
+
+fmad  <- matrixStats::rowMads(luad$E)
+rfmad <- rank(-fmad)
+fidx <- which(rfmad <= 500)
+my.pca <- prcomp(sdztE[,fidx],retx=TRUE)
+dfx <- as.data.frame(my.pca$x)
+```
+
+```{r pcaplot}
+ggplot(dfx,  aes(x=PC1, y=PC2, color = luad$targets$tissue , shape = luad$targets$race)) + geom_point(size=2.5) +
+  labs(color="Tissue Type")
+```
+
+Save PCs and compare to covariates. Should I do this for all tissues, or separately by tumor/non-tumor lung?
+
+```{r screeplot}
+pcvar <- my.pca$sdev^2   #These are variances of PCs
+cumvar <- cumsum(pcvar)
+pctvar <- cumvar/max(cumvar)
+par(mfrow=c(1,2))
+plot(1:10,pcvar[1:10],xlab="PC",ylab="Variance")
+plot(1:10,pctvar[1:10],xlab="PCs",ylab="Percent Variance Explained",ylim=c(0,1))
+```
+
+Let's try it for all tissues and see how it goes. Then we can try it in normal lung to see if things look any different.
+
+```{r covars}
+colnames(luad$targets)
+covars <- cbind.data.frame(
+                age=luad$targets$age,
+                pys=luad$targets$pys,
+                tumor = ifelse(luad$targets$tissue=="T",1,0),
+                AA = ifelse(luad$targets$race=="AA",1,0),
+                male = ifelse(luad$targets$gender=="male",1,0)
+)
+rownames(covars) <- rownames(luad$targets)
+cor(covars,use="pairwise.complete.obs")
+```
+
+
+It'd be nice to plot this as a heatmap...
+
+Since tumor tissue is separating from normal tissue, I'm going to do this in normal tissue only.
+```{r ntl}
+ntl <- NULL
+ntl$targets <- luad$targets[luad$targets$tissue =="N",]
+ntl$E <- luad$E[,rownames(ntl$targets)]
+identical(rownames(ntl$targets),colnames(ntl$E))
+
+ntl.covars <- covars[colnames(ntl$E),]
+ntl.covars <- ntl.covars[,c("age","pys","AA","male")]
+```
+
+Now repeat the PCA in non-tumor lung.
+
+```{r corpccovs}
+tE <- t(ntl$E)
+sdztE <- scale(tE,center=TRUE,scale=
+                 matrixStats::colMads(tE))
+
+fmad  <- matrixStats::rowMads(ntl$E)
+rfmad <- rank(-fmad)
+fidx <- which(rfmad <= 500)
+my.pca <- prcomp(sdztE[,fidx],retx=TRUE)
+dfx <- as.data.frame(my.pca$x)
+```
+
+What does this screeplot look like?
+
+```{r screeplotntl}
+pcvar <- my.pca$sdev^2   #These are variances of PCs
+cumvar <- cumsum(pcvar)
+pctvar <- cumvar/max(cumvar)
+par(mfrow=c(1,2))
+plot(1:10,pcvar[1:10],xlab="PC",ylab="Variance")
+plot(1:10,pctvar[1:10],xlab="PCs",ylab="Percent Variance Explained",ylim=c(0,1))
+```
+
+```{r ntlpcacov}
+pc1thru10 <- dfx[,1:10]
+round(cor(ntl.covars,pc1thru10,use="pairwise.complete.obs"),3)
+```
+
+
+```{r pcaplotntl}
+ggplot(dfx,  aes(x=PC1, y=PC3, color = ntl.covars$AA , shape = factor(ntl.covars$male))) + geom_point(size=2.5) +
+  labs(color="AA")
+```
+
+
+## Differential Expression Analysis
+
+```{r lmfit}
+design <- model.matrix(~tissue*race,data=luad$targets)
+head(design)
+fit <- lmFit(luad$E,design)
+
+contr.matrix <- cbind(TNinAA  = c(0,1,0,0),
+                      TNinEA  = c(0,1,0,1))
+#contr.matrix
+fitfull <- contrasts.fit(fit,contr.matrix)
+fitfull <- limma::eBayes(fitfull)
+topTable(fitfull,n=5)
+```
+
+
+Let's use MAD as a filter. We'll find the mode of the distribution, and remove all features with MAD less than the mode.
+
+```{r madfilter}
+mads <- matrixStats::rowMads(luad$E)
+sh <- genefilter::shorth(mads)
+mean(mads < sh)
+```
+
+This shows 33\% of the features are below the mode in our dataset. 
+
+```{r histsds}
+hist(mads,breaks=50,col="mistyrose",xlab="median absolute deviation")
+abline(v=sh,col="blue",lwd=3,lty=2)
+```
+
+This is a weird distribution. Let's look at the F-statistics ranked by the variance.
+
+Create a function to count the number of rejected tests for all possible cutoffs of a second variable. The second variable ('method') will be either the BH-adjusted pvalue or the q-value.
+```{r smryresults}
+nrjct <- function(fname=c("none"),plist,method=c("BH","q")){
+      if(method=="BH")  qv = p.adjust(plist)
+      if(method=="q")   qv = qvalue(plist)$qvalue
+      pv <- cbind.data.frame(pv = plist,
+                            qv=qv) %>%
+            arrange(qv)
+      nr <- pv %>%
+        mutate(n = 1,
+               filt=fname) %>%
+        mutate(n_t  = cumsum(n))   %>%
+        group_by(qv)  %>%
+          slice(which.max(n_t)) %>%
+        filter(qv < 0.20)
+      return(nr)
+}
+```
+
+```{r sdsfilt}
+set.seed(10)
+f1 <- which(mads > sh)
+rs <- sample(1:length(fitfull$F.p.value),length(f1))
+rn1out <- rbind.data.frame(
+            nrjct("none",fitfull$F.p.value,method = "BH"),
+            nrjct("var-filter",fitfull$F.p.value[f1],method = "BH"),
+            nrjct("random",fitfull$F.p.value[rs],method = "BH"))
+ggplot(rn1out,aes(qv,n_t,group=filt,color=filt))+
+  geom_step() + xlab("Estimated FDR")  +
+    ylab("# tests rejected")
+```
+
+Let's create a Venn diagram of the significant results using the cutoff of BH-adjusted p < 0.01 used in the paper.
+
+```{r VennnoF}
+results <- limma::decideTests(fitfull,
+                       method = "separate", 
+                       adjust.method="BH",
+                       p.value = 0.01,
+                       lfc = 0)
+
+vennDiagram(results,main="No Filter")
+```
+
+```{r counts}
+head(results)
+sum(abs(results))
+fitfull$coefficients[1:3,]
+identical(rownames(fitfull$coefficients),rownames(results))
+```
+
+
+```{r VennF1filter}
+resultsf1 <- limma::decideTests(fitfull[f1,],
+                       method = "separate", 
+                       adjust.method="BH",
+                       p.value = 0.01,
+                       lfc = 0)
+
+vennDiagram(resultsf1,main="MAD-Mode Filter")
+sum(abs(resultsf1))
+```
+
+These genes have higher overlap in AA and EU than the gene lists identified without filtering.
+
+```{r VennRSfilter}
+resultsrs <- limma::decideTests(fitfull[rs,],
+                       method = "separate", 
+                       adjust.method="BH",
+                       p.value = 0.01,
+                       lfc = 0)
+
+vennDiagram(resultsrs,main="Random subset Filter")
+sum(abs(resultsrs))
+```
+
+This subset identifies fewer differentially expressed genes in all categories.
+
+```{r Ff1}
+df <- cbind.data.frame(
+            mads = matrixStats::rowMads(luad$E),
+            inty = apply(luad$E,1,function(x) quantile(x,0.75)),
+            fstat = fitfull$F,
+            f.pv = fitfull$F.p.value)
+            
+idxmads <- df %>% 
+          arrange(mads) %>%
+          mutate(idx = 1:length(fstat)) %>%
+          mutate(gpidx = ntile(idx, 20))
+
+gett95ub <- function(data) {
+            data %>%
+            group_by(gpidx) %>%
+            summarize(ub95 = quantile(fstat,0.95),
+                      midx = mean(idx))
+            }
+
+qnmad <- gett95ub(idxmads)
+```
+
+```{r abst.inty}
+# do for intensity
+idxinty <- df %>% 
+          arrange(inty) %>%
+          mutate(idx = 1:length(fstat)) %>%
+          mutate(gpidx = ntile(idx, 20))
+qninty <- gett95ub(idxinty)
+
+par(mfrow=c(1,2))
+smoothScatter(idxmads$idx,idxmads$fstat,xlab="Sorted by MAD",ylab="F-stat")
+points(qnmad$midx,qnmad$ub95,pch=16,col=2)
+smoothScatter(idxinty$idx,idxinty$fstat,
+              xlab="Sorted by Int Q(75)",ylab="F-stat")
+points(qninty$midx,qninty$ub95,pch=16,col=2)
+```
+
+## use LFC filter & adj p 
+
+```{r badpractice}
+results <- limma::decideTests(fitfull,
+                       method = "separate", 
+                       adjust.method="BH",
+                       p.value = 0.01,
+                       lfc = 1)
+vennDiagram(results,main="lfc > 1 & BH-adj p<0.01")
+```
+
+```{r badpractice}
+results <- limma::decideTests(fitfull,
+                       method = "separate", 
+                       adjust.method="BH",
+                       p.value = 0.01,
+                       lfc = 0)
+#identical(rownames(fitfull$coefficients),rownames(results))
+results.filtlfc <- results * ifelse(abs(fitfull$coefficients) > 1,1,0)
+vennDiagram(results.filtlfc,main="BH-adj p<0.01 then lfc > 1")
+```
+
+These are the same.  So why are we not supposed to use logFC as a filter?
+
+
+
+```{r sessioninfo}
+sessionInfo()
+```
