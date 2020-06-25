@@ -189,7 +189,7 @@ cor(covars,use="pairwise.complete.obs")
 
 
 
-```{r ntlpcacov}
+```{r pcacov}
 pc1thru10 <- dfx[,1:10]
 round(cor(covars,pc1thru10,use="pairwise.complete.obs"),3)
 ```
@@ -347,6 +347,7 @@ More genes appear in the middle (significant in both groups).  Is this differenc
 
 ## use LFC filter & adj p 
 
+It can be common in science to see reports that filter on both the BH adjusted pvalue and the logFC. The limma package allows for this, but in the documentation the authors recommend against using both filters at the same time. Instead, they recommend using their other function "treat()" that will test Ho: Beta = logFC_0 vs Ha: Beta < -logFC_0 or Beta > logFC_0, which is preferred for getting correct error rates (pvalues).  We can study this with a simulation! (coming soon)   For now, let's see what the function decideTests does when you specify the lfc filter.
 ```{r isthisbadpractice}
 resultswlfc <- limma::decideTests(fitfull,
                        method = "separate", 
@@ -369,6 +370,7 @@ colSums(lfcfilt)
 ```
 
 
+Now let's apply this filter to the BH-adjusted pvalue results.
 ```{r BHadjthenlfc}
 results <- limma::decideTests(fitfull,
                        method = "separate", 
@@ -380,7 +382,7 @@ results.filtlfc <- results * lfcfilt
 vennDiagram(results.filtlfc,main="BH-adj p<0.01 then lfc > 1")
 ```
 
-We get the same numbers.  So why are we not supposed to use logFC as a filter?
+We get the same numbers.  So why are we not supposed to use logFC as a filter? (plan for a simulation).
 ```{r signfiltlfc}
 colSums(abs(results.filtlfc))
 ```
@@ -390,7 +392,7 @@ And the total number of genes:
 sum(rowSums(abs(results.filtlfc))>0)
 ```
 
-The practice of using logFC as a filter BEFOFE our multiple test correction is invalid. I would expect the number of significant results to increase if I filter on logFC before I correct for multiple testing.
+The practice of using logFC as a filter BEFOFE our multiple test correction is invalid (it is not non-specific). I would expect the number of significant results to increase if I filter on logFC before I correct for multiple testing.
 ```{r badpractice}
 idx <- which(rowSums(lfcfilt)>0)
 
