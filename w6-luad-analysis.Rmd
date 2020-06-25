@@ -101,6 +101,7 @@ with(ptcovar , t.test(pys~race))
 ```{r tabstage}
 with(ptcovar,table(Stage,race))
 with(ptcovar,prop.table(table(Stage,race),2))
+with(ptcovar,fisher.test(table(Stage,race)))
 ```
 
 
@@ -140,6 +141,8 @@ legend(-1.5,2,levels(luad$targets$race),
         pch=16,col=order(levels(luad$targets$race)),
        cex=.75)
 ```
+
+
 ```{r pca}
 # transpose the expression matrix
 tE <- t(luad$E)
@@ -183,6 +186,14 @@ covars <- cbind.data.frame(
 rownames(covars) <- rownames(luad$targets)
 cor(covars,use="pairwise.complete.obs")
 ```
+
+
+
+```{r ntlpcacov}
+pc1thru10 <- dfx[,1:10]
+round(cor(covars,pc1thru10,use="pairwise.complete.obs"),3)
+```
+
 
 
 It'd be nice to plot this as a heatmap...
@@ -230,7 +241,7 @@ round(cor(ntl.covars,pc1thru10,use="pairwise.complete.obs"),3)
 
 
 ```{r pcaplotntl}
-ggplot(dfx,  aes(x=PC1, y=PC3, color = ntl.covars$AA , shape = factor(ntl.covars$male))) + geom_point(size=2.5) +
+ggplot(dfx,  aes(x=PC3, y=PC5, color = ntl.covars$AA , shape = factor(ntl.covars$male))) + geom_point(size=2.5) +
   labs(color="AA")
 ```
 
@@ -259,7 +270,7 @@ sh <- genefilter::shorth(mads)
 mean(mads < sh)
 ```
 
-This shows 33\% of the features are below the mode in our dataset. 
+This shows 32\% of the features are below the mode in our dataset. 
 
 ```{r histsds}
 hist(mads,breaks=50,col="mistyrose",xlab="median absolute deviation")
@@ -299,8 +310,9 @@ ggplot(rn1out,aes(qv,n_t,group=filt,color=filt))+
   geom_step() + xlab("Estimated FDR")  +
     ylab("# tests rejected")
 ```
+This shows filtering on variance will reject more tests (based on the overall F-statistic.)
 
-Let's create a Venn diagram of the significant results using the cutoff of BH-adjusted p < 0.01 used in the paper.
+Let's create a Venn diagram of the significant results using the cutoff of BH-adjusted p < 0.01 used in the paper, and then investigate the effect of filtering on the significant results.
 
 ```{r VennnoF}
 results <- limma::decideTests(fitfull,
@@ -313,10 +325,7 @@ vennDiagram(results,main="No Filter")
 ```
 
 ```{r counts}
-head(results)
-sum(abs(results))
-fitfull$coefficients[1:3,]
-identical(rownames(fitfull$coefficients),rownames(results))
+colSums(abs(results))
 ```
 
 
@@ -328,87 +337,79 @@ resultsf1 <- limma::decideTests(fitfull[f1,],
                        lfc = 0)
 
 vennDiagram(resultsf1,main="MAD-Mode Filter")
-sum(abs(resultsf1))
 ```
 
-These genes have higher overlap in AA and EU than the gene lists identified without filtering.
-
-```{r VennRSfilter}
-resultsrs <- limma::decideTests(fitfull[rs,],
-                       method = "separate", 
-                       adjust.method="BH",
-                       p.value = 0.01,
-                       lfc = 0)
-
-vennDiagram(resultsrs,main="Random subset Filter")
-sum(abs(resultsrs))
+```{r countf1}
+colSums(abs(resultsf1))
 ```
 
-This subset identifies fewer differentially expressed genes in all categories.
-
-```{r Ff1}
-df <- cbind.data.frame(
-            mads = matrixStats::rowMads(luad$E),
-            inty = apply(luad$E,1,function(x) quantile(x,0.75)),
-            fstat = fitfull$F,
-            f.pv = fitfull$F.p.value)
-            
-idxmads <- df %>% 
-          arrange(mads) %>%
-          mutate(idx = 1:length(fstat)) %>%
-          mutate(gpidx = ntile(idx, 20))
-
-gett95ub <- function(data) {
-            data %>%
-            group_by(gpidx) %>%
-            summarize(ub95 = quantile(fstat,0.95),
-                      midx = mean(idx))
-            }
-
-qnmad <- gett95ub(idxmads)
-```
-
-```{r abst.inty}
-# do for intensity
-idxinty <- df %>% 
-          arrange(inty) %>%
-          mutate(idx = 1:length(fstat)) %>%
-          mutate(gpidx = ntile(idx, 20))
-qninty <- gett95ub(idxinty)
-
-par(mfrow=c(1,2))
-smoothScatter(idxmads$idx,idxmads$fstat,xlab="Sorted by MAD",ylab="F-stat")
-points(qnmad$midx,qnmad$ub95,pch=16,col=2)
-smoothScatter(idxinty$idx,idxinty$fstat,
-              xlab="Sorted by Int Q(75)",ylab="F-stat")
-points(qninty$midx,qninty$ub95,pch=16,col=2)
-```
+More genes appear in the middle (significant in both groups).  Is this difference significant? Yes, somewhat. Would this be enough to affect the Enrichment results?
 
 ## use LFC filter & adj p 
 
-```{r badpractice}
-results <- limma::decideTests(fitfull,
+```{r isthisbadpractice}
+resultswlfc <- limma::decideTests(fitfull,
                        method = "separate", 
                        adjust.method="BH",
                        p.value = 0.01,
                        lfc = 1)
-vennDiagram(results,main="lfc > 1 & BH-adj p<0.01")
+vennDiagram(resultswlfc,main="lfc > 1 & BH-adj p<0.01")
 ```
 
-```{r badpractice}
+```{r ntestreject}
+colSums(abs(resultswlfc))
+```
+
+Are these filters performed independently? (BH adj pvalue is on all the features.) Let's do them in two steps to see. First, create a filter based on the coefficients.
+
+```{r filtlfc}
+identical(rownames(fitfull$coefficients),rownames(results))
+lfcfilt <- ifelse(abs(fitfull$coefficients) > 1,1,0)
+colSums(lfcfilt)
+```
+
+
+```{r BHadjthenlfc}
 results <- limma::decideTests(fitfull,
                        method = "separate", 
                        adjust.method="BH",
                        p.value = 0.01,
                        lfc = 0)
 #identical(rownames(fitfull$coefficients),rownames(results))
-results.filtlfc <- results * ifelse(abs(fitfull$coefficients) > 1,1,0)
+results.filtlfc <- results * lfcfilt
 vennDiagram(results.filtlfc,main="BH-adj p<0.01 then lfc > 1")
 ```
 
-These are the same.  So why are we not supposed to use logFC as a filter?
+We get the same numbers.  So why are we not supposed to use logFC as a filter?
+```{r signfiltlfc}
+colSums(abs(results.filtlfc))
+```
 
+And the total number of genes:
+```{r nfeatfiltlfc}
+sum(rowSums(abs(results.filtlfc))>0)
+```
 
+The practice of using logFC as a filter BEFOFE our multiple test correction is invalid. I would expect the number of significant results to increase if I filter on logFC before I correct for multiple testing.
+```{r badpractice}
+idx <- which(rowSums(lfcfilt)>0)
+
+results <- limma::decideTests(fitfull[idx,],
+                       method = "separate", 
+                       adjust.method="BH",
+                       p.value = 0.01,
+                       lfc = 0)
+vennDiagram(results,main="lfc > 1 then BH-adj p<0.01")
+```
+
+```{r nfeat}
+sum(rowSums(abs(results))>0)
+```
+Yes! This rejects many more tests. We should NOT filter on logFC before the multiple test correction.
+
+```{r nreject}
+colSums(abs(results))
+```
 
 ```{r sessioninfo}
 sessionInfo()
