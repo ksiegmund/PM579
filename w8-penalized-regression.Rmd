@@ -1,0 +1,224 @@
+---
+title: "Penalized Regression"
+author: "PM579"
+date: "7/8/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# {.tabset}
+
+## Background
+
+Here is a website that gives 3 simulation models for comparing ridge, lasso, and elastic net regression.
+
+https://www4.stat.ncsu.edu/~post/josh/LASSO_Ridge_Elastic_Net_-_Examples.html
+
+The StatQuest video uses the model in example 1 for teaching how to perform penalized regression in R using the function glmnet(). I'm going to have us run the code from the website and the video and interpret the results.
+
+Example 1 uses the following model:
+
+n=1000 observations
+
+p=5000 features
+
+All predictors are created as (standardized) normal random variates. Then it computes the observed y by adding normally distributed random error to the true regression model. 
+
+Parameters = 15-1's, 4985- 0's
+
+which measure the effect sizes for the p features. All predictor variables are independent.
+
+## Website code
+
+```{r libs}
+if (!require(glmnet)) install.packages("glmnet")
+library(glmnet)
+```
+
+**Generate data**
+
+```{r generate data}
+# Generate data
+set.seed(19875)  # Set seed for reproducibility
+n <- 1000  # Number of observations
+p <- 5000  # Number of predictors included in model
+real_p <- 15  # Number of true predictors
+x <- matrix(rnorm(n*p), nrow=n, ncol=p)
+y <- apply(x[,1:real_p], 1, sum) + rnorm(n)
+
+# Split data into train (2/3) and test (1/3) sets
+train_rows <- sample(1:n, .66*n)
+x.train <- x[train_rows, ]
+x.test <- x[-train_rows, ]
+
+y.train <- y[train_rows]
+y.test <- y[-train_rows]
+```
+
+**Fit models**
+
+```{r fitm}
+# Fit models 
+# (For plots on left):
+fit.lasso <- glmnet(x.train, y.train, family="gaussian", alpha=1)
+fit.ridge <- glmnet(x.train, y.train, family="gaussian", alpha=0)
+fit.elnet <- glmnet(x.train, y.train, family="gaussian", alpha=.5)
+
+
+# 10-fold Cross validation for each alpha = 0, 0.1, ... , 0.9, 1.0
+# (For plots on Right)
+for (i in 0:10) {
+    assign(paste("fit", i, sep=""), cv.glmnet(x.train, y.train, type.measure="mse", 
+                                              alpha=i/10,family="gaussian"))
+}
+```
+
+**plot solution paths and cv mse**
+
+```{r plots}
+# Plot solution paths:
+par(mfrow=c(3,2))
+# For plotting options, type '?plot.glmnet' in R console
+plot(fit.lasso, xvar="lambda")
+plot(fit10, main="LASSO")
+
+plot(fit.ridge, xvar="lambda")
+plot(fit0, main="Ridge")
+
+plot(fit.elnet, xvar="lambda")
+plot(fit5, main="Elastic Net")
+```
+
+**mse on test set**
+
+```{r msetestset}
+yhat0 <- predict(fit0, s=fit0$lambda.1se, newx=x.test)
+yhat1 <- predict(fit1, s=fit1$lambda.1se, newx=x.test)
+yhat2 <- predict(fit2, s=fit2$lambda.1se, newx=x.test)
+yhat3 <- predict(fit3, s=fit3$lambda.1se, newx=x.test)
+yhat4 <- predict(fit4, s=fit4$lambda.1se, newx=x.test)
+yhat5 <- predict(fit5, s=fit5$lambda.1se, newx=x.test)
+yhat6 <- predict(fit6, s=fit6$lambda.1se, newx=x.test)
+yhat7 <- predict(fit7, s=fit7$lambda.1se, newx=x.test)
+yhat8 <- predict(fit8, s=fit8$lambda.1se, newx=x.test)
+yhat9 <- predict(fit9, s=fit9$lambda.1se, newx=x.test)
+yhat10 <- predict(fit10, s=fit10$lambda.1se, newx=x.test)
+
+mse0 <- mean((y.test - yhat0)^2)
+mse1 <- mean((y.test - yhat1)^2)
+mse2 <- mean((y.test - yhat2)^2)
+mse3 <- mean((y.test - yhat3)^2)
+mse4 <- mean((y.test - yhat4)^2)
+mse5 <- mean((y.test - yhat5)^2)
+mse6 <- mean((y.test - yhat6)^2)
+mse7 <- mean((y.test - yhat7)^2)
+mse8 <- mean((y.test - yhat8)^2)
+mse9 <- mean((y.test - yhat9)^2)
+mse10 <- mean((y.test - yhat10)^2)
+```
+
+```{r printmse}
+cbind.data.frame(alpha=seq(0,1,0.1),
+                 mse = c(mse0,mse1,mse2,mse3,mse4,mse5,
+                         mse6,mse7,mse8,mse9,mse10))
+```
+
+Compare this to the output:
+https://www4.stat.ncsu.edu/~post/josh/LASSO_Ridge_Elastic_Net_-_Examples.html#example-1
+
+Please explain your thoughts about this comparison.
+
+## StatQuest code
+
+**Generate data**
+
+We have the same model, but the video sets a different seed.
+
+```{r simdata}
+# Generate data
+set.seed(42)  # Set seed for reproducibility
+n <- 1000  # Number of observations
+p <- 5000  # Number of predictors included in model
+real_p <- 15  # Number of true predictors
+x <- matrix(rnorm(n*p), nrow=n, ncol=p)
+y <- apply(x[,1:real_p], 1, sum) + rnorm(n)
+
+# Split data into train (2/3) and test (1/3) sets
+train_rows <- sample(1:n, .66*n)
+x.train <- x[train_rows, ]
+x.test <- x[-train_rows, ]
+
+y.train <- y[train_rows]
+y.test <- y[-train_rows]
+```
+
+**Fit models**
+
+```{r cvglmnet}
+alpha0.fit <- cv.glmnet(x.train, y.train, type.measure="mse",
+                        alpha = 0, family="gaussian")
+alpha0.predicted <- predict(alpha0.fit, s = alpha0.fit$lambda.1se,
+                            newx = x.test)
+mean((y.test - alpha0.predicted)^2)
+
+alpha1.fit <- cv.glmnet(x.train, y.train, type.measure="mse",
+                        alpha = 1, family="gaussian")
+alpha1.predicted <- predict(alpha1.fit, s = alpha1.fit$lambda.1se,
+                            newx = x.test)
+mean((y.test - alpha1.predicted)^2)
+
+alpha0.5.fit <- cv.glmnet(x.train, y.train, type.measure="mse",
+                        alpha = 0.5, family="gaussian")
+alpha0.5.predicted <- predict(alpha0.5.fit, 
+                              s = alpha0.5.fit$lambda.1se,
+                            newx = x.test)
+mean((y.test - alpha0.5.predicted)^2)
+```
+
+**Pick alpha by min mse**
+
+```{r fit-models}
+list.of.fits <- list()
+for (i in 0:10){
+  fit.name <- paste0("alpha", i/10)
+  
+  list.of.fits[[fit.name]] <-
+    cv.glmnet(x.train, y.train, type.measure = "mse", alpha = i/10,
+              family = "gaussian")
+}
+
+results <- data.frame()
+for (i in 0:10){
+  fit.name <- paste0("alpha", i/10)
+  
+  predicted <-
+    predict(list.of.fits[[fit.name]] ,
+           s = list.of.fits[[fit.name]]$lambda.1se, newx = x.test)
+  
+  mse <- mean((y.test-predicted)^2)
+  
+  temp  <- data.frame(alpha = i/10, mse = mse, fit.name = fit.name)
+  results <- rbind(results,temp)
+}
+results
+```
+
+How do these compare to the results from the video?
+
+https://www.youtube.com/watch?v=ctmNq7FgbvI&t=203s
+
+(16:41 min)
+
+And from the website? 
+
+1. Name one thing you can do to investigate this further  
+2. Do what you proposed in 1., and prepare to share the result of your investigation with the class.
+
+### Session Information
+```{r sI}
+sessionInfo()
+```
