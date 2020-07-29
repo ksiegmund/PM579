@@ -1,0 +1,30 @@
+---
+title: "Analysis of The Cancer Genome Atlas (TCGA) data"
+author: "ks"
+date: "July 29, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Colon Adenocarcinoma (COAD) data  
+
+The DNA methylation platform changed during the time the TCGA samples were begin analyzed. The earlier samples were analyzed using the HumanMethylation27 platform. Today we're 2 generations past that one (HumanMethylation450 and MethylationEPIC).
+
+I've selected for analysis the samples with HumanMethylation27 data since the tumors measured using this platform have the most complete annotation (e.g. tumor site, CIMP-designation, tumor stage). I previously downloaded these data along with patient clinical information from the package: curatedTCGAData. I got the RNAseq data from GEO: GSE62944. 
+```{r LOADanalysisdataset}
+dataDir = c("pm579data/COAD")
+load(file.path(dataDir,"coadhm27-AnalysisSet.rda"))
+load(file.path(dataDir,"coadhm27-gex-AnalysisSet.rda"))
+load(file.path(dataDir,"coadhm27-clindat-AnalysisSet.rda"))
+```
+
+Outline an anlaysis you'd like to see of this data, and begin to explore it.
+
+
+
+```{r SessionInfo}
+sessionInfo()
+```
