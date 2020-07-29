@@ -23,6 +23,13 @@ load(file.path(dataDir,"coadhm27-clindat-AnalysisSet.rda"))
 
 Outline an anlaysis you'd like to see of this data, and begin to explore it.
 
+```{r ReadarrayAnnotation}
+  # Read our manifest for Feature Information
+  manifest<-read.delim(file.path(dataDir,"Infinium methylation Manifest 20100913.txt"))
+   # restrict to features reported in TCGA
+   manifest<-manifest[is.element(manifest$IlmnID..current.version.of.manifest.,rownames(coad)),]
+   rownames(manifest)<-manifest$IlmnID..current.version.of.manifest.
+```
 
 
 ```{r SessionInfo}
