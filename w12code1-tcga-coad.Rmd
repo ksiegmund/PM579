@@ -1,0 +1,300 @@
+---
+title: "TCGA: Colon adenocarcinoma (part 2)"
+author: "ks"
+date: "July 2020"
+output: html_document
+---
+
+# {.tabset}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(PMA)
+library(pls)
+library(edgeR)
+```
+
+## Colon Adenocarcinoma (COAD) data from TCGA 
+
+Here are just the data steps to get the same data as in w12code0...
+```{r LOADanalysisdataset, echo=FALSE}
+dataDir = c("pm579data/COAD")
+load(file.path(dataDir,"coadhm27-AnalysisSet.rda"))
+load(file.path(dataDir,"coadhm27-gex-AnalysisSet.rda"))
+load(file.path(dataDir,"coadhm27-clindat-AnalysisSet.rda"))
+
+manifest <- read.delim(file.path(dataDir,"Infinium methylation Manifest 20100913.txt"))
+# restrict to features reported in TCGA
+manifest<-manifest[is.element(manifest$IlmnID..current.version.of.manifest.,rownames(coad)),]
+rownames(manifest)<-manifest$IlmnID..current.version.of.manifest.
+```
+
+This might be easier to follow using 1 data object.
+```{r object}
+dnam <- coad
+coad <- NULL
+coad$E <- rseq
+coad$targets <- cDataMAE
+coad$dnam <- dnam
+names(coad)
+```
+
+```{r covars-subset}
+covars <- cbind.data.frame(
+                age=coad$targets$age,
+                purity=coad$targets$abs_purity,
+                MSI.H = ifelse(coad$targets$MSI_status=="MSI-H",1,0),
+                CIMP.H = ifelse(coad$targets$methylation_subtype=="CIMP.H",1,0),
+                male = ifelse(coad$targets$mysex=="male",1,0)
+)
+rownames(covars) <- rownames(coad$targets)
+#cor(covars,use="pairwise.complete.obs")
+```
+
+## Gene Expression
+
+Compute cpmy and remove genes without expression in at least 10% of samples.
+```{r FilterGex}
+  cpmy<-edgeR::cpm(coad$E)
+filt<-which( apply(cpmy>1,1,sum) > 0.1*ncol(cpmy) )
+  length(filt)
+  cpmy<-cpmy[filt,]
+  dim(cpmy)
+  coad$lcpmy <- log2(cpmy+1)
+```
+
+```{r pca}
+fmad  <- matrixStats::rowMads(coad$lcpmy)
+rfmad <- rank(-fmad)
+fidx <- which(rfmad <= 500)
+
+# transpose the expression matrix
+tE <- t(coad$lcpmy)
+sdztE <- scale(tE,center=TRUE,scale=
+                 matrixStats::colMads(tE))
+my.pcaE <- prcomp(sdztE[,fidx],retx=TRUE)
+epcs <- as.data.frame(my.pcaE$x)
+```
+
+## DNA methylation
+
+Now let's see what happens when we do a similar analysis with DNA methylation data.
+
+```{r FiltDNAm}   
+# Now filter non-variable DNAm features
+f2<-apply(coad$dnam,1,var)
+summary(f2)
+coad$dnam<-coad$dnam[f2>0.01,]
+# Now filter rows with missing DNAm features
+mis<-which(apply(is.na(coad$dnam),1,sum)>0)
+coad$dnam<-coad$dnam[-mis,]
+dim(coad$dnam)
+#reduce manifest to this subset
+minimanifest<-manifest[rownames(coad$dnam),]
+```
+
+Now, just to further reduce the dimension of the DNAm data, I will restrict it to features mapped to expressed genes. Why might I choose to do this?   I probably will go back and try doing the analysis without this limitation to see what effect it has.
+```{r HarmonizebyGene}
+  sidx<-is.element(minimanifest$Symbol_UPDATED..20100111.,
+                 rownames(coad$lcpmy))
+  harmonizedmanifest<-minimanifest[sidx==1,]
+  dnam.subsetgex<-coad$dnam[rownames(harmonizedmanifest),] 
+  dim(coad$dnam)
+  dim(dnam.subsetgex)
+```
+
+That drops almost 3000 CpG targets.
+
+```{r checkorder}   
+   print(c("rownames(harmonizedmanifest)==rownames(dnam.subsetgex)?"))
+   identical(rownames(harmonizedmanifest),rownames(dnam.subsetgex))
+```
+
+We transform the Beta values to be more normally distributed. A logit-like transformation works well here, M values = log2 (beta/1-beta).
+```{r transform}
+  mvals <- function(beta){  log2(beta/(1-beta)) }
+  mcoad <- mvals(coad$dnam)
+  mdnam.subsetgex <- mvals(dnam.subsetgex)
+```
+
+When we plot the top 2 PCs, we see PC1 is strongly associated with sex (cor=0.94).  Where are these CpGs?
+
+```{r mprop.table}
+table(harmonizedmanifest$Chr)
+```
+
+X chromosome methylation is different in males and females (X chromosome inactivation). Let's drop the features on the sex chromosomes before proceeding.
+
+```{r filtXY}
+mdnams <- mdnam.subsetgex[
+          !is.element(harmonizedmanifest$Chr,c("X","Y")),]
+manifest.sub <- harmonizedmanifest[!is.element(harmonizedmanifest$Chr,c("X","Y")),]
+dim(mdnams)
+nrow(manifest.sub)
+```
+
+```{r pca-dnam2}
+fmad  <- matrixStats::rowMads(mdnams)
+rfmad <- rank(-fmad)
+fidx <- which(rfmad <= 500)
+
+# transpose the dnam matrix
+tM <- t(mdnams)
+sdztM <- scale(tM,center=TRUE,scale=
+                 matrixStats::colMads(tM))
+my.mpca <- prcomp(sdztM[,fidx],retx=TRUE)
+mpca <- as.data.frame(my.mpca$x)
+```
+
+```{r pcaplot3}
+ggplot(mpca,  aes(x=PC1, y=PC2, color = coad$targets$MSI_status, shape = coad$targets$mysex)) + geom_point(size=2.5) +
+  labs(color="MSI_status",shape="Sex")
+```
+
+The separation by sex has disappeared now. How do these correlate with the covariates?
+
+```{r mpcacov}
+round(cor(covars,mpca[,1:8],use="pairwise.complete.obs"),3)
+```
+
+PC1 is highly correlated with both CIMP-H and MSI-H. 
+
+How much of the DNAm variation do these PCs explain?
+
+```{r screeplot}
+pcvar <- my.mpca$sdev^2   #These are variances of PCs
+cumvar <- cumsum(pcvar)
+pctvar <- cumvar/max(cumvar)
+par(mfrow=c(1,2))
+plot(1:10,pcvar[1:10],xlab="PC",ylab="Variance")
+plot(1:10,pctvar[1:10],xlab="PCs",ylab="Percent Variance Explained",ylim=c(0,1))
+```
+
+## Cannonical Correlation analysis
+
+I needed to standardize the columns.
+
+```{r stdize}
+  X <- pls::stdize(t(mdnams))
+  Z <- pls::stdize(t(coad$lcpmy))
+```
+
+```{r CCAPermute}
+set.seed(47)
+perm.out <- CCA.permute(X,Z,typex="standard",
+                        typez="standard",
+                        penaltyxs=seq(.1,.7,len=10),   
+                        penaltyzs=seq(.1,.7,len=10),
+                        nperms=20)
+print(perm.out)
+plot(perm.out)
+```
+
+
+```{r BestPenaltyFit}
+out <- CCA(X,Z,typex="standard",typez="standard",K=3,
+           penaltyx=perm.out$bestpenaltyx,
+           penaltyz=perm.out$bestpenaltyz, v=perm.out$v.init)
+print(out)
+```
+
+
+Let's check that we can compute the same correlations from our data.
+```{r computecor}
+cc1u<- X%*%out$u[,1]
+cc1v<- Z%*%out$v[,1]
+cor(cc1u,cc1v)
+plot(cc1u,cc1v)
+
+cc2u<- X%*%out$u[,2]
+cc2v<- Z%*%out$v[,2]
+```
+
+Now let's see if the cannonical variables correlate with the PCs.
+
+```{r cors}
+ccvs <- cbind.data.frame(cc1u,cc1v,cc2u,cc2v)
+pcs  <- cbind.data.frame(mpca[,1:4],epcs[,1:4])
+round(cor(ccvs),digits=3)
+round(cor(pcs),digits=3)
+round(cor(pcs,ccvs),digits=3)
+```
+
+Do they correlate with our clinical variables? Important clincial variables in colon cancer include: Age, sex, MSI status, methylation subtype. 
+
+```{r corcovar}
+round(cor(covars,pcs,use="pairwise.complete.obs"),3)
+round(cor(covars,ccvs,use="pairwise.complete.obs"),3)
+```
+
+This may be as far as we get.
+
+## Purity-adjusted CCA
+
+I'm going to adjust all features for tumor purity.
+```{r eBayes}
+  library('limma')
+  design=model.matrix(~coad$targets$abs_purity)
+  head(design)
+  colnames(design) <-c("Intercept","purity") 
+
+vfit <- lmFit(coad$lcpmy, design)
+efit <- eBayes(vfit)
+fitted<- efit$coefficients%*%t(design)
+lcpmy.resid<-coad$lcpmy - fitted
+
+vfit <- lmFit(mdnams, design)
+efit <- eBayes(vfit)
+fitted<- efit$coefficients%*%t(design)
+mdnams.resid <- mdnams - fitted
+```
+
+```{r getMats}
+  X <- pls::stdize(t(mdnams.resid))
+  Z <- pls::stdize(t(lcpmy.resid))
+```
+
+```{r CCAPermuteResid}
+perm.out <- CCA.permute(X,Z,typex="standard",typez="standard",nperms=7)
+print(perm.out)
+plot(perm.out)
+```
+
+```{r BestPenaltyFitResid}
+out <- CCA(X,Z,typex="standard",typez="standard",K=3,
+           penaltyx=perm.out$bestpenaltyx,
+           penaltyz=perm.out$bestpenaltyz, v=perm.out$v.init)
+print(out)
+```
+
+I find it interesting that we find fewer genes in each canonical variable after we've tried to adjust the analysis for variation in tumor purity.
+
+```{r computecorResid}
+cc1u<- X%*%out$u[,1]
+cc1v<- Z%*%out$v[,1]
+
+cc2u<- X%*%out$u[,2]
+cc2v<- Z%*%out$v[,2]
+
+ccvs.adj <- cbind.data.frame(cc1u,cc1v,cc2u,cc2v)
+```
+
+
+```{r corcovar.adj}
+#round(cor(covars,pcs,use="pairwise.complete.obs"),3)
+round(cor(covars,ccvs.adj,use="pairwise.complete.obs"),3)
+```
+
+```{r annotcor2}
+cor.test(cc1u,coad$targets$years_to_birth)
+summary(lm(cc1u~coad$targets$MSI_status))
+summary(lm(cc1u~coad$targets$methylation_subtype))
+t.test(cc1u~coad$targets$mysex)
+```
+
+All biological variables age, MSI-status and sex are correlated with these linear combinations.  
+
+```{r SessionInfo}
+sessionInfo()
+```

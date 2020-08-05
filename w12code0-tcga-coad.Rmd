@@ -1,0 +1,309 @@
+---
+title: "TCGA: Colon adenocarcinoma"
+author: "ks"
+date: "July 2020"
+output: html_document
+---
+
+# {.tabset}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(PMA)
+library(pls)
+library(edgeR)
+```
+
+## Colon Adenocarcinoma (COAD) data from TCGA 
+
+Today's goal will be to get more experience interpreting data and associations in a 
+study of colon adenocarcinomas from the Cancer Genome Atlas (TCGA). 
+
+I previously downloaded patient clinical information along with some tumor characteristics from the package: curatedTCGAData. 
+```{r LOADanalysisdataset, echo=FALSE}
+dataDir = c("pm579data/COAD")
+load(file.path(dataDir,"coadhm27-AnalysisSet.rda"))
+load(file.path(dataDir,"coadhm27-gex-AnalysisSet.rda"))
+load(file.path(dataDir,"coadhm27-clindat-AnalysisSet.rda"))
+
+manifest <- read.delim(file.path(dataDir,"Infinium methylation Manifest 20100913.txt"))
+# restrict to features reported in TCGA
+manifest<-manifest[is.element(manifest$IlmnID..current.version.of.manifest.,rownames(coad)),]
+rownames(manifest)<-manifest$IlmnID..current.version.of.manifest.
+```
+
+First, let's check the 3 datasets all provide data (clinical, Gene expression & DNAm) on the same samples.  
+
+```{r check-sample-ordering}
+dim(cDataMAE)
+dim(rseq)
+dim(coad)
+identical(rownames(cDataMAE),colnames(rseq))
+identical(colnames(coad),colnames(rseq))
+```
+
+This might be easier to follow using 1 data object.
+```{r object}
+dnam <- coad
+coad <- NULL
+coad$E <- rseq
+coad$targets <- cDataMAE
+coad$dnam <- dnam
+names(coad)
+```
+
+```{r check-dimensions}
+dim(coad$targets)
+dim(coad$E)
+dim(coad$dnam)
+```
+
+Good! This looks like the kind of object we've used in this class, with the addition of one new data matrix for DNA methylation.
+
+```{r DataStats}
+  head(coad$targets)
+```
+
+We have 65 columns of variables!  I'm going to have us focus on the following subset:   
+* age_at_initial_pathalogic_diagnosis   
+* mysex (male/female)
+* MSI_status (MSI-H/MSI-L/MSS)   
+* methylation_subtype (CIMP.H, CIMP.L, Cluster3, Cluster4)   
+* abs_purity (fraction tumor cells)
+
+The TCGA variable named "gender.x" is the patient's sex.  I created a re-labeled version "mysex" to use the term sex instead of gender, and indicate that it was a variable I created with the prefix "my". 
+
+A variable that is often important when studying tissue is the cell composition. Different cell types have different genes expressed and different DNA methylation profiles. Human tumors are a complex mixture of cells, and not all cells in the tumor are cancer cells. In TCGA tumor purity was estimated using a method called ABSOLUTE (PMID: 22544022). There are many methods that do this now, but I've downloaded this estimate to see how it relates to our other variables (abs_purity).
+```{r mDataStats}
+  table(coad$targets$gender.x,coad$targets$mysex)
+```
+
+Now we can summarize the other variables of primary interest by sex.
+
+```{r MeanAge}
+  aggregate(coad$targets$age,by=list(coad$targets$mysex),mean)
+  table(coad$targets$MSI_status,coad$targets$mysex)
+  prop.table(table(coad$targets$MSI_status,coad$targets$mysex),2)
+  table(coad$targets$methylation_subtype,coad$targets$mysex)
+  prop.table(table(coad$targets$methylation_subtype,coad$targets$mysex),2)
+```  
+
+```{r clinvar}
+with(coad$targets,table(methylation_subtype,MSI_status,mysex))
+  prop.table(with (coad$targets[coad$targets$mysex=="female",],table(methylation_subtype,MSI_status)),2) 
+  prop.table(with (coad$targets[coad$targets$mysex=="male",],table(methylation_subtype,MSI_status)),2) 
+```
+
+Let's see whether tumor purity is associated with any of the variables we've studied so far. 
+
+```{r tumor_purity}
+boxplot(coad$targets$abs_purity~coad$targets$mysex)
+plot(coad$targets$age,coad$targets$abs_purity)
+boxplot(coad$targets$abs_purity~coad$targets$MSI_status)
+boxplot(coad$targets$abs_purity~coad$targets$methylation_subtype)
+```
+  
+```{r abs_purity}
+summary(lm(coad$targets$abs_purity~coad$targets$MSI_status))
+```
+
+Does purity vary by MSI-status?
+
+```{r covars-subset}
+covars <- cbind.data.frame(
+                age=coad$targets$age,
+                purity=coad$targets$abs_purity,
+                MSI.H = ifelse(coad$targets$MSI_status=="MSI-H",1,0),
+                CIMP.H = ifelse(coad$targets$methylation_subtype=="CIMP.H",1,0),
+                male = ifelse(coad$targets$mysex=="male",1,0)
+)
+rownames(covars) <- rownames(coad$targets)
+cor(covars,use="pairwise.complete.obs")
+```
+
+## Gene Expression
+
+Now let's explore the gene expression data. My first step will be to visualize the data.
+
+What should we do first?  (check distributions)
+```{r Edist}
+head(coad$E[1:4,1:4])
+```
+
+Now filter the gene expression data set.  First, we check the library sizes and note how variable they are across samples.
+```{r rseqlibsizes}
+  libsize<-apply(coad$E,2,sum)
+  summary(libsize)
+  max(libsize)/min(libsize)
+  # Compute counts per million (cpm) for each sample to find    expressed genes
+  cpmy<-edgeR::cpm(coad$E)
+  par(mfrow=c(1,2))
+  plot(libsize,coad$E[5,])
+  plot(libsize,cpmy[5,])
+```
+
+It appears that normalizing the library sizes to 10^6 was enough to remove the association between read count and library size for one of the genes.  Now let's remove genes without expression in at least 10% of samples.
+```{r FilterGex}
+  filt<-which( apply(cpmy>1,1,sum) > 0.1*ncol(cpmy) )
+  length(filt)
+  cpmy<-cpmy[filt,]
+  dim(cpmy)
+```
+
+What do we do with the data?  Look at the distribution!
+```{r cpmy}
+par(mfrow=c(2,2))
+hist(cpmy[1,])
+hist(cpmy[2,])
+hist(cpmy[3,])
+hist(cpmy[4,])
+```
+
+The cpm values are still counts that are skewed with high values. Let's take a log2 transformation of these. 
+
+```{r pca}
+coad$lcpmy <- log2(cpmy+1)
+fmad  <- matrixStats::rowMads(coad$lcpmy)
+rfmad <- rank(-fmad)
+fidx <- which(rfmad <= 500)
+
+# transpose the expression matrix
+tE <- t(coad$lcpmy)
+sdztE <- scale(tE,center=TRUE,scale=
+                 matrixStats::colMads(tE))
+my.pcaE <- prcomp(sdztE[,fidx],retx=TRUE)
+epcs <- as.data.frame(my.pcaE$x)
+```
+
+```{r pcaplot}
+ggplot(epcs,  aes(x=PC1, y=PC2, color = coad$targets$MSI_status , shape = coad$targets$mysex)) + geom_point(size=2.5) +
+  labs(color="MSI status",shape="Sex")
+```
+
+Are the PCs associated with any of the covariates?
+
+```{r pcacov}
+pc1thru8 <- epcs[,1:8]
+round(cor(covars,pc1thru8,use="pairwise.complete.obs"),3)
+```
+
+The biological variables MSI.H and CIMP.H ahev the greatest association with PC1, followed by sex. Sex, tumor purity and age are the variables most correlated with PC2. And purity is the variable most correlated with PC3 &  PC4.
+
+How much of the gene expression variation do these PCs explain?
+
+```{r screeplot}
+pcvar <- my.pcaE$sdev^2   #These are variances of PCs
+cumvar <- cumsum(pcvar)
+pctvar <- cumvar/max(cumvar)
+par(mfrow=c(1,2))
+plot(1:10,pcvar[1:10],xlab="PC",ylab="Variance")
+plot(1:10,pctvar[1:10],xlab="PCs",ylab="Percent Variance Explained",ylim=c(0,1))
+```
+
+10 PCs only explain ~50% of the variance in the gene expression data set.
+
+## DNA methylation
+
+Now let's see what happens when we do a similar analysis with DNA methylation data.
+
+
+```{r FiltDNAm}   
+# Now filter non-variable DNAm features
+f2<-apply(coad$dnam,1,var)
+summary(f2)
+coad$dnam<-coad$dnam[f2>0.01,]
+# Now filter rows with missing DNAm features
+mis<-which(apply(is.na(coad$dnam),1,sum)>0)
+coad$dnam<-coad$dnam[-mis,]
+dim(coad$dnam)
+#reduce manifest to this subset
+minimanifest<-manifest[rownames(coad$dnam),]
+```
+
+Now, just to further reduce the dimension of the DNAm data, I will restrict it to features mapped to expressed genes. Why might I choose to do this?   I probably will go back and try doing the analysis without this limitation to see what effect it has.
+```{r HarmonizebyGene}
+  sidx<-is.element(minimanifest$Symbol_UPDATED..20100111.,
+                 rownames(coad$lcpmy))
+  harmonizedmanifest<-minimanifest[sidx==1,]
+  dnam.subsetgex<-coad$dnam[rownames(harmonizedmanifest),] 
+  dim(coad$dnam)
+  dim(dnam.subsetgex)
+```
+
+That drops almost 3000 CpG targets.
+
+```{r checkorder}   
+   print(c("rownames(harmonizedmanifest)==rownames(dnam.subsetgex)?"))
+   identical(rownames(harmonizedmanifest),rownames(dnam.subsetgex))
+```
+
+What do the DNA methylation look like?  (look at distributions)
+
+```{r dnamhist}
+par(mfrow=c(2,2))
+hist(dnam.subsetgex[1,])
+hist(dnam.subsetgex[2,])
+hist(dnam.subsetgex[3,])
+hist(dnam.subsetgex[4,])
+```
+
+```{r dnamsubgroup}
+plot(coad$targets$abs_purity,dnam.subsetgex[2,])
+boxplot(dnam.subsetgex[2,]~coad$targets$methylation_subtype)
+```
+
+The DNAm values, called Beta values by Illumina, are proportions, bounded by 0 and 1. These should be transformed prior to analysis to be more normally distributed. A logit-like transformation works well here, M values = log2 (beta/1-beta).
+
+```{r transform}
+  mvals <- function(beta){  log2(beta/(1-beta)) }
+  mcoad <- mvals(coad$dnam)
+  mdnam.subsetgex <- mvals(dnam.subsetgex)
+```
+
+Let's look at a pca plot of these:
+
+```{r pca-dnam}
+fmad  <- matrixStats::rowMads(mdnam.subsetgex)
+rfmad <- rank(-fmad)
+fidx <- which(rfmad <= 500)
+
+# transpose the DNAm matrix
+tM <- t(mdnam.subsetgex)
+sdztM <- scale(tM,center=TRUE,scale=
+                 matrixStats::colMads(tM))
+my.mpca <- prcomp(sdztM[,fidx],retx=TRUE)
+mpcs <- as.data.frame(my.mpca$x)
+```
+
+```{r mpcaplot}
+ggplot(mpcs,  aes(x=PC1, y=PC2, color = coad$targets$MSI_status , shape = coad$targets$mysex)) + geom_point(size=2.5) +
+  labs(color="MSI status",shape="Sex")
+```
+
+
+
+```{r mpcacov}
+round(cor(covars,mpcs[,1:8],use="pairwise.complete.obs"),3)
+```
+
+How much of the DNAm variation do these PCs explain?
+
+```{r screeplot-dnam}
+pcvar <- my.mpca$sdev^2   #These are variances of PCs
+cumvar <- cumsum(pcvar)
+pctvar <- cumvar/max(cumvar)
+par(mfrow=c(1,2))
+plot(1:10,pcvar[1:10],xlab="PC",ylab="Variance")
+plot(1:10,pctvar[1:10],xlab="PCs",ylab="Percent Variance Explained",ylim=c(0,1))
+```
+
+10 PCs only explain ~70% of the variance in the DNAm dataset.
+
+
+Pick somone in your group to report back what you found.
+
+
+```{r SessionInfo}
+sessionInfo()
+```
