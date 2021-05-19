@@ -99,8 +99,8 @@ names(jbcdat)
 
 Let's save this data set for future use.
 ```{r savedata}
-jbcdir=c("data/JBC 2012")
-save(jbcdat,file = file.path(jbcdir,"jbcdat.rda"))
+#jbcdir=c("data/JBC 2012")
+#save(jbcdat,file = file.path(jbcdir,"jbcdat.rda"))
 ```
 
 
