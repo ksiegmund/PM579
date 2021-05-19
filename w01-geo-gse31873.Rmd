@@ -1,0 +1,123 @@
+---
+title: "Format GEO GSE31873 Dataset"
+author: "K Siegmund"
+date: "5/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# {.tabset}
+
+## Gene Expression Data
+
+Import C42b cell line data from GEO.  
+Illumina HumanHT-12 V4.0 expression beadchip
+GPL10558; 47231 rows
+
+The download from GEO can take a few minutes, depending on computer and internet speed. Therefore I ran the command earlier, and saved the object as an R data set that we can load directly from the data folder. 
+
+```{r libraries}
+library(purrr)
+#if(!require("GEOquery")) {BiocManager::install("GEOquery")}
+#library(GEOquery)
+#gse31873<-getGEO('GSE31873',GSEMatrix=TRUE)
+
+load("data/JBC 2012/gse31873.rda")
+```
+
+```{r showgse}
+show(gse31873)
+```
+
+We want to oragnize the data into a list object, jbcdat, with three matrices:    
+* E for the expression data  (exprs)  
+* targets for sample annotation  (pData)  
+* genes for gene annotation  (fData)  
+```{r exprs}
+gse <- gse31873$GSE31873_series_matrix.txt.gz
+jbcdat <- NULL
+jbcdat$E <- exprs(gse)    
+jbcdat$E[1:4,1:3] 
+```
+
+pData accesses the sample annotation information (p stands for phenotype.)
+
+```{r pDannot}
+names(pData(gse))   
+```
+
+
+Check if the sample annotation data and gene expression data are ordered identically.
+```{r checkorder}
+identical(as.character(pData(gse)$geo_accession),
+                colnames(jbcdat$E))
+```
+
+The first variable 'title' contains the sample treatment information and the variable 'description' the array names.
+```{r annot}
+pData(gse)$title        # sample treatment information
+pData(gse)$description  # array name
+```
+
+Now I will create a sample annotation dataframe named targets. I will have to break up the string in 'title' to get the different treatment factors.
+```{r sampannot}
+trtvars    <- strsplit(as.character(pData(gse)$title)," ")
+trt_time   <- map_chr(trtvars,pluck,2)
+rep        <- map_chr(trtvars,pluck,4)
+trts   <- strsplit(as.character(trt_time),"_")
+treatment <- map_chr(trts,pluck,1)
+hour       <- map_chr(trts,pluck,2)
+
+jbcdat$targets <- 
+        data.frame(barcode = pData(gse)$description,
+                   treatment,hour,rep, 
+                   type = factor(trt_time), 
+                   type_rep = paste(trt_time,rep,sep="_"))
+#levels(jbcdat$targets$type) <- c("")
+rownames(jbcdat$targets) <- pData(gse)$geo_accession
+head(jbcdat$targets)
+rm(trtvars,treatment,trt_time,trts,hour)
+```
+
+fData is the feature (gene) annotation data.
+
+```{r fDannot}
+names(fData(gse))   
+```
+
+Now let's save some array feature annotation information. 
+```{r featannot}
+jbcdat$genes <- data.frame(fData(gse)[,c("Entrez_Gene_ID","Symbol","Chromosome")])
+head(jbcdat$genes,n=12)
+```
+
+```{r dataobj}
+names(jbcdat)
+```
+
+Let's save this data set for future use.
+```{r savedata}
+jbcdir=c("data/JBC 2012")
+save(jbcdat,file = file.path(jbcdir,"jbcdat.rda"))
+```
+
+
+## MDS plot
+
+Label samples by their treatment and color.
+```{r MDSplot}
+library(limma)
+
+limma::plotMDS(jbcdat$E,labels=jbcdat$targets$type,
+        col=unclass(jbcdat$targets$type),
+        xlim = c(-1.5,1.5), ylim=c(-1,1),
+        main="MDS plot") #color by type
+```
+
+
+```{r sessionInfo}
+sessionInfo()
+```
+
