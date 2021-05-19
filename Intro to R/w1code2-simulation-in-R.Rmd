@@ -32,7 +32,7 @@ df$sbp[9901:10000] <- df$sbp[9901:10000] + 11
 
 ```{r plot}
 ggplot(df, aes(x=sbp, fill=carrier)) +
-  geom_density()
+  geom_density(alpha=0.6)
 
 t.test(sbp~carrier,data=df)
 ```
@@ -44,7 +44,7 @@ idx <- sample(1:10000,500)
 sum(df$carrier[idx]=="Yes")
 ```
 
-**Now go rank the women on SBP and select the 500 with the higest values. Now how many do you expect will be gene carriers?**
+**Now go rank the women on SBP and select the 500 with the highest values. Now how many do you expect will be gene carriers?**
 
 ```{r topsbp}
 rsbp <- rank(-df$sbp)
