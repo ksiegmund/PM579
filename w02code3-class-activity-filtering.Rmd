@@ -51,7 +51,7 @@ Here's the density plot by treatment (magic potion vs placebo) for 1 differentia
 df <- data.frame(gex = simdat[idx[1],],
                  potion=potion)
 ggplot(df, aes(x=gex, fill=potion)) +
-  geom_density()
+  geom_density(alpha=0.6)
 ```
 
 I'm going to create a data set to store the gene standard deviations, that will be our filtering variable, and an indicator variable telling us which genes are differentially expressed.
