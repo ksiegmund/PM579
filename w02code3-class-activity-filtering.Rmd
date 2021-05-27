@@ -1,7 +1,7 @@
 ---
 title: "Feature Filtering"
 author: "ks"
-date: "5/25/2021"
+date: "5/26/2021"
 output: html_document
 ---
 
@@ -42,7 +42,7 @@ Now, I'm going to create differential expression in 1000 of the genes. For those
 set.seed(20)  # set the seed when generating random numbers
 idx <- sample(c(1:ng),1000)
 potion <- factor(rep(c("Placebo", "Magic"), each=48))
-simdat[idx,48:96] <- simdat[idx,48:96]+2.5*sds_e[idx]
+simdat[idx,49:96] <- simdat[idx,49:96]+2.5*sds_e[idx]
 ```
 
 Here's the density plot by treatment (magic potion vs placebo) for 1 differentially expressed gene.
