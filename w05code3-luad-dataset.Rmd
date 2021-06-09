@@ -1,7 +1,7 @@
 ---
 title: "Lung Cancer in AA & EA"
 author: "ks"
-date: "6/17/2020"
+date: "6/16/2021"
 output: html_document
 ---
 
@@ -102,13 +102,13 @@ head(luad$genes)
 ```
 
 
-```{r fdata}
+```{r fdata2}
 #head(luad$genes)
 table(luad$genes$ENTREZ_GENE_ID=="")
 ```
 
 Let's restrict the data set to non-missing Entrez Gene IDs.
-```{r fdata}
+```{r fdata3}
 table(luad$genes$ENTREZ_GENE_ID=="")
 idx <- which(luad$genes$ENTREZ_GENE_ID!="")
 luad$E <- luad$E[idx,]
