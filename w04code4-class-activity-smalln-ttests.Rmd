@@ -1,7 +1,7 @@
 ---
 title: "Class activity - small sample t tests"
 author: "ks"
-date: "6/10/2020"
+date: "6/9/2021"
 output: html_document
 ---
 
