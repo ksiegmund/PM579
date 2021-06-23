@@ -1,7 +1,7 @@
 ---
 title: "RNA seq"
 author: "ks"
-date: "7/1/2020"
+date: "6/23/2021"
 output: html_document
 ---
 
@@ -19,7 +19,7 @@ The data are for 4 experiments in A549 cells downloaded from ENCODE  (Reddy et a
 R uses a data object called SummarizedExperiment for storing count data in an object. The rows represent genomic ranges of interest and the columns are samples. That is the format used to store the counts from the ENCODDE data analyzed here.
 
 ```{r loadData}
-load(file="pm579data/RNAseq/cnts.rda")
+load(file="data/RNAseq/cnts.rda")
 show(cnts)
 ```
 
