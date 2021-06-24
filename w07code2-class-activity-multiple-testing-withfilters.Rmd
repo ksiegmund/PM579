@@ -28,7 +28,7 @@ The large number of null genes accentuate the effect of multiple testing.
 
 First I'll get the real data and analyze it to get the estimates of standard deviation for the simulation. This will just be for the analysis of hormone response genes using the non-specific knockdown group.
 ```{r jbcdat}
-load(file = c("pm579data/JBC 2012/jbcdat.rda"))
+load(file = c("data/JBC 2012/jbcdat.rda"))
 geoid <- rownames(jbcdat$targets)[jbcdat$targets$treatment == "siNS"]
 subsetEobj <- function(dataobj,geonames){
   subobj <-NULL
