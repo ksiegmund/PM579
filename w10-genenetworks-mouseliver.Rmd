@@ -133,7 +133,7 @@ The variable datExpr now contains the expression data ready for network analysis
 
 We now read in the trait data and match the observations (mice in this data set) to the expression data.
 ```{r traits}
-dataDir <- c("pm579data/WGCNA");
+dataDir <- c("data/WGCNA");
 traitData <- read.csv(file.path(dataDir,"ClinicalTraits.csv"));
 dim(traitData)
 names(traitData)
