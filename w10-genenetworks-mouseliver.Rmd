@@ -1,7 +1,7 @@
 ---
 title: "Gene Networks-mouse liver"
 author: "ks"
-date: "7/22/2020"
+date: "7/21/2021"
 output: html_document
 ---
 
@@ -51,7 +51,7 @@ and samples with excessive numbers of missing entries.
 The expression data is contained in the file LiverFemale3600.csv that comes with this tutorial. After starting an
 R session and loading the requisite packages shown above, we read in the data:
 ```{r readData}
-dataDir <- c("pm579data/WGCNA");
+dataDir <- c("data/WGCNA");
 # The following setting is important, do not omit.
 options(stringsAsFactors = FALSE);
 #Read in the female liver data set
