@@ -246,6 +246,7 @@ A PCA of a subset of the data may find a different cluster result than PCA of th
 
 Next week: CCA 
 
+## SessionInfo
 
 ```{r SessionInfo}
 sessionInfo()
