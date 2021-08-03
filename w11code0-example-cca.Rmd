@@ -1,5 +1,5 @@
 ---
-title: "Example CCA from PMD package"
+title: "Example CCA from PMA package"
 author: "Ks"
 date: "7/29/2020"
 output: html_document
