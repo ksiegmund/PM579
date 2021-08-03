@@ -78,6 +78,7 @@ zcc1<- zc%*%out$v[,1]
 plot(xcc1,zcc1,
      main=paste("cor=",round(cor(xcc1,zcc1),7)))
 ```
+
 The correlation matches the output from "print(out)".
 
 ```{r si}
