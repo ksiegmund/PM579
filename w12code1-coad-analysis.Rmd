@@ -356,6 +356,8 @@ Results we found:
 1. A PCA of a subset of the data may find a different cluster result than PCA of the full data set.  (e.g.,  DNA methylation finding clusters by sex)  
 2. Signals shared by different data types might be better prioritized by canonical correlation variables than a PCA of the concatenated data set. (e.g., tumor purity).  However, we did have a different feature selection when running the CCA.  
 
+## SessionInfo
+
 ```{r SessionInfo}
 sessionInfo()
 ```
