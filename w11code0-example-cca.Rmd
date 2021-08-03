@@ -61,6 +61,25 @@ print(out)
 ```
 
 
+How many non-zero elements are there?
+```{r coefs}
+sum(out$u[,1]!=0)
+sum(out$v[,1]!=0)
+```
+
+I did not feed the CCA function matrices with scaled column vectors, but the function did the scaling of the data before performing CCA. To get the canonical variables out, I will have to scale the columns of my input matrix before I multiply the rows by the vector of coefficients. By scale, I mean center the data to have mean 0, sd 1.
+
+Let's plot the first 2 components:
+```{r plotcc1s}
+xc <- scale(x)
+zc <- scale(z)
+xcc1<- xc%*%out$u[,1]
+zcc1<- zc%*%out$v[,1]
+plot(xcc1,zcc1,
+     main=paste("cor=",round(cor(xcc1,zcc1),7)))
+```
+The correlation matches the output from "print(out)".
+
 ```{r si}
 sessionInfo()
 ```
