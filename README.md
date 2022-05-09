@@ -1,3 +1,3 @@
-# Title
+# Lab Material for PM579
 
-This is a readme **file**
+I will be using this repository to share all R scripts we'll be using in **this class**
