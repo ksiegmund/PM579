@@ -1,7 +1,7 @@
 ---
 title: "Simulation in R"
 author: "ks"
-date: "5/19/2021"
+date: "5/18/2022"
 output: html_document
 ---
 
