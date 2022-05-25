@@ -1,7 +1,7 @@
 ---
 title: "Feature Filtering"
 author: "ks"
-date: "5/26/2021"
+date: "5/25/2022"
 output: html_document
 ---
 
@@ -19,7 +19,7 @@ Let's use some real data to simulate what the gene expression data set might loo
 ## Prostate Cancer Summary Statistics
 
 ```{r loadjbc}
-load("data/JBC 2012/jbcdat.rda")
+load("../data/JBC 2012/jbcdat.rda")
 
 mn_e <- rowMeans(jbcdat$E)
 sds_e <- matrixStats::rowSds(jbcdat$E)
