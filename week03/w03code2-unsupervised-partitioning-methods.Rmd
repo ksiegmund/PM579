@@ -1,0 +1,333 @@
+---
+title: "Unsupervised Analysis - Partitioning Methods"
+author: "K Siegmund"
+date: "6/3/2020"
+output: html_document
+---
+
+# {.tabset}
+
+## Libraries
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r installlibs}
+library(ComplexHeatmap)
+library(viridis)  
+library(matrixStats)
+library(stats)
+library(ggplot2)
+library(gg3D)
+library(cluster)
+```
+
+## Prostate Cancer Data
+
+I'm going to apply the partioning algorithms to the same data that we used for the hierarchical clustering, specifically selecting the 500 most variable features and standardizing them.
+
+```{r data}
+load("../data/JBC 2012/jbcdat.rda")
+```
+
+
+```{r scalefilterfeatures}
+rowscale <- function(x) {
+      (x - rowMeans(x))/matrixStats::rowMads(x)
+}
+
+fmad <- matrixStats::rowMads(jbcdat$E)
+rfilt <- rank(-fmad)
+fidx <- which( rfilt <= 500)
+
+X <- t(rowscale(jbcdat$E)[fidx,])
+dim(X)
+```
+
+We have 24 samples, each with 500 gene expression measurements.
+
+## K-means
+
+Kmeans generates starting values for the algorithm using a random number generator. In order to reproduce our results later, we have to set the random number seed using the set.seed() command.
+
+
+Here's the command for kmeans, with a table comparing the cluster assignments to the actual treatments.
+```{r kmeans}
+set.seed(46)
+km4 <- stats::kmeans(X,4)
+table(jbcdat$targets$type,km4$cluster)
+```
+
+Let's visualize these cluster assignments by coloring the samples on the 2-D PCA plot.
+
+```{r top500pca}
+my.pca <- prcomp(X,retx=TRUE)
+dfx <- as.data.frame(my.pca$x)
+```
+
+```{r vis-kmeans-cluster}
+ggplot(dfx,  aes(x=PC1, y=PC2, color = factor(km4$cluster))) +
+           geom_point(size=2.5) +
+  labs(color="Km cluster")
+```
+
+We see cluster 3 (aqua) does not correctly identify a complete treatment group.  But, with different starting values, the kmeans algorithm may find a different solution.  
+
+Let's repeat the analysis using 200 random starting values and select the solution with the smallest within-cluster sum of squares.
+```{r kmeansMultStart}
+set.seed(99)
+kmx <- stats::kmeans(X,centers = 4,nstart = 200)
+#table(jbcdat$targets$type,kmx$cluster)
+```
+
+```{r vis-kmeans-cluster-mstart}
+ggplot(dfx,  aes(x=PC1, y=PC2, color = factor(kmx$cluster))) +
+           geom_point(size=2.5) +
+  labs(color="Km cluster")
+```
+
+A-ha! When we pick the best solution from multiple starts (lowest within-cluster sum of squares from 200 different starts) we separate the samples perfectly into 4 treatment groups. But why 4?    
+
+Can we recover all 6 treatment groups?
+```{r kmeansMultStartkm6}
+set.seed(99)
+km6 <- stats::kmeans(X,centers = 6,nstart = 200)
+table(jbcdat$targets$type,km6$cluster)
+```
+
+Yes! These are the 6 treatment groups. We need a 3-D PCA plot to show this.
+
+```{r vis-kmeans-cluster-km6}
+ggplot(dfx, aes(x=PC1, y=PC2, z=PC3,  
+                    color=factor(km6$cluster))) + 
+  theme_void() +
+  axes_3D() +
+  stat_3D(size=2.5) +
+  labs(color="Km cluster")
+```
+
+How might we indicate the different treatment labels on the figure to show the concordance?
+
+**Heatmap**
+
+Another way to show the results is to use a heatmap. Here are the color annotations for sample treatments again.
+```{r annotheatmap}
+jbcdat$targets$treatment <- factor(jbcdat$targets$treatment,
+                                   levels=c("siNS","siCBP","sip300"))
+
+# column heatmap annotation
+colha <- ComplexHeatmap::HeatmapAnnotation(df = 
+                       jbcdat$targets[,c("treatment","hour")],
+                col = list(treatment = c(siNS = "pink", 
+                                         siCBP = "purple",
+                                         sip300 = "orange"),
+                                 hour = c('0hr' = "grey",
+                                        '16hr' = "lightgreen")
+                          ), 
+                which = "column")
+```
+
+And the k-means clustering can be called directly from the heatmap function in the ComplexHeatmap library.
+```{r plotHeatkm} 
+set.seed(200)
+htc <- ComplexHeatmap::Heatmap(t(X), 
+           clustering_distance_rows = "pearson",
+           clustering_method_rows = "ward.D2",
+           column_km = 4, 
+           column_km_repeats = 100,
+              column_title = "Samples",
+              row_title = "Features",
+              name = "sdz(log2E)", 
+              col = viridis(32), 
+              top_annotation = colha,
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+draw(htc)
+```
+
+Notice how it only draws 3 groups when we ask for 4. This has to do with how it summarizes the results from the 100 random starting points. It reports a "consensus" k-means cluster result that agrees as much as possible with each of the 100 cluster results, instead of picking the single result that minimizes the clustering criterion. There are different methods for picking a criterion to measure cluster agreement.
+
+**Number of clusters**
+
+Here are 2 approaches for estimating the number of clusters.
+```{r nclust}
+set.seed(101)
+twss <- rep(NA,7)
+for (i in 1:7) {
+  km <- stats::kmeans(X,i+1,nstart=200)
+  twss[i] <- km$tot.withinss
+  }
+plot(2:8,twss,main="Scree Plot",xlab="Number of Clusters", ylab="Total Within SS",type="l")
+```
+
+The above plot is called a scree plot. One picks the number of clusters where there is an 'elbow' (bend). It is a very old approach, and many more modern ones have been proposed. For the above plot the answer is either 3 or 4, but which one?
+
+Here's one more recent approach, the Gap statistic. It measures a goodness of clustering.  
+```{r gapstat, echo=FALSE}
+set.seed(500)
+gap_stat <- cluster::clusGap(X, FUN = kmeans, nstart = 50, K.max = 8, B = 100)
+plot(gap_stat,main=c("Gap Statistic"),ylim=c(-0.1,0.25),
+     xlab="Number of Clusters")
+```
+
+One picks the first k such that: Gap(k) > Gap(k+1) - SE(k+1)
+
+## PAM
+
+The function partioning around medoids (PAM) is available in cluster library. 
+
+```{r pam}
+p4=cluster::pam(X,4)
+table(jbcdat$targets$type,p4$cluster)
+```
+
+```{r vis-pam-cluster}
+ggplot(dfx,  aes(x=PC1, y=PC2, color = factor(p4$cluster))) +
+           geom_point(size=2.5) +
+  labs(color="PAM cluster")
+```
+
+Nice! This robust technique separated the 4 treatment groups without multiple starts.  
+
+
+**Number of clusters**
+
+The Silhouette plot is recommended for selecting the number of clusters.
+
+```{r silhouette}
+silpam4=silhouette(p4)
+```
+
+```{r silplot, echo=FALSE}
+plot(silpam4)
+```
+
+Let's check how many groups the data support.
+```{r nclustsw}
+sw <- rep(NA,7)
+for (i in 1:7) {
+  pm <- pam(X,i+1)
+  sw[i] <- summary(pm)$silinfo$avg.width
+  }
+plot(2:8,sw,xlab="Number of Clusters", ylab="Average Silhouette Width",type="l")
+```
+
+The Silhouette width is oh-so-close for 3 and 4 groups.  Let's see how our partitioning around medoids algorithm sumarizes the data with only 3 groups.
+
+```{r pam3}
+p3 <- pam(X,3)
+table(jbcdat$targets$type,p3$cluster)
+#summary(p3)$silinfo$avg.width
+```
+
+```{r vis-p3-cluster}
+ggplot(dfx,  aes(x=PC1, y=PC2)) +
+           geom_point(size=4,aes(shape=jbcdat$targets$type,
+                          color = factor(p3$cluster))) +
+  labs(shape = "Treatment", color = "PAM cluster")
+```
+
+The two sip300 treatments (0h, 16h) are different from the rest, but similar to each other.
+
+**Heatmap** 
+
+We can present the data matrix using a heatmap, with the columns ordered by the PAM cluster assignments.
+
+```{r more-colha}
+
+dfr <- jbcdat$targets[,c("treatment","hour")]
+colha <- ComplexHeatmap::HeatmapAnnotation(df = dfr,
+                col = list(treatment = c(siNS = "pink", 
+                                         siCBP = "purple",
+                                         sip300 = "orange"),
+                                 hour = c('0hr' = "grey",
+                                        '16hr' = "lightgreen")
+                          ), 
+                which = "column")
+```
+
+```{r plotHeat} 
+# split columns by clust3 variable
+#clust3 <- as.character(p3$clustering)
+clust4 <- as.character(p4$clustering)
+htc <- ComplexHeatmap::Heatmap(t(X), 
+           clustering_distance_rows = "pearson",
+           clustering_method_rows = "ward.D2",
+           column_split = clust4,
+              column_title = "Samples",
+              row_title = "Features",
+              name = "sdz(log2E)", 
+              col = viridis(32), 
+              top_annotation = colha,
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+draw(htc)
+```
+
+Alternatively, we may want to just plot the cluster means/medoids. I will use the same row order as from our clustering of all 24 samples.
+
+```{r plotMedoids} 
+#some exploration of the plot above led me to find out the clusters were ordered: 2,4,1,3
+clust4 <- as.character(c(2,4,3,1))
+htm <- ComplexHeatmap::Heatmap(t(p4$medoids)[,c(2,4,3,1)], 
+           row_order = row_order(htc),
+           column_split = clust4,
+              column_title = "Samples",
+              row_title = "Features",
+              name = "sdz(log2E)", 
+              col = viridis(32), 
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+draw(htm, padding = unit(c(2, 60, 2, 2), "mm"))
+```
+
+Here is how I figured out the cluster order:
+```{r more-colha2}
+# column heatmap annotation
+clust4 <- as.character(p4$clustering)
+dfr <- data.frame(jbcdat$targets[,c("treatment","hour")],
+                  clust4 = as.character(p4$clustering))
+colha4 <- ComplexHeatmap::HeatmapAnnotation(df = dfr,
+                col = list(treatment = c(siNS = "pink", 
+                                         siCBP = "purple",
+                                         sip300 = "orange"),
+                                 hour = c('0hr' = "grey",
+                                        '16hr' = "lightgreen"),
+                           clust4 = c("1" = "black", 
+                                  "2" = "red",
+                                  "3" = "blue",
+                                  "4" = "yellow")
+                          ), 
+                which = "column")
+```
+
+```{r plotHeat2} 
+htc4 <- ComplexHeatmap::Heatmap(t(X), 
+           clustering_distance_rows = "pearson",
+           clustering_method_rows = "ward.D2",
+           column_split = clust4,
+              column_title = "Samples",
+              row_title = "Features",
+              name = "sdz(log2E)", 
+              col = viridis(32), 
+              top_annotation = colha4,
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+draw(htc4)
+```
+
+## Other Packages
+
+There is a wealth of packages that have been developed to perform unsupervised data analysis. 
+
+https://cran.r-project.org/web/views/Cluster.html
+
+A package cclust advertises doing both kmeans and hard-clustering. Their hard-clustering sounds similar to the method Partioning around medoids above. The authors of the package provide a different approach, bagged clustering, to address the instability of a single solution. Their Bagged clustering approach can be a topic for a class presentation or class project. Is it analogous to consensus clustering?
+
+
+```{r sessionInfo}
+sessionInfo()
+```
+
