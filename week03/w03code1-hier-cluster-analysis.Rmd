@@ -21,7 +21,7 @@ r <- getOption("repos")
 r["CRAN"] <- "http://cran.wustl.edu/"
 options(repos = r)
 
-if(!require("virdis"))  {install.packages("viridis")}  
+if(!require("viridis"))  {install.packages("viridis")}
 
 library(ComplexHeatmap)
 library(viridis)  
