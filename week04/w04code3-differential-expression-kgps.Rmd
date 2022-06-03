@@ -1,0 +1,235 @@
+---
+title: "Differential Expression k gps"
+author: "ks"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# {.tabset}
+
+## Data
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!require(genefilter)) BiocManager::install("genefilter")
+library(genefilter)
+library(limma)
+library(tidyverse)
+```
+
+Let's analyze the prostate cancer cell line data we've used in class. The treatments are:  
+
+treatment 1: siNS, sip300, siCBP 
+
+treatment 2:  0 hr,  16 hrs
+     
+All cells are treated with androgen at 0 hrs. The genes that change expression between 0 and 16 hours are genes that are regulated by androgen. These might vary based on the different treatments siNS (control), sip300, and siCBP.
+
+Load the data (from JBC (2012)).
+```{r ReadData}
+jbcdir=c("../data/JBC 2012")
+load(file.path(jbcdir,"jbcdat.rda"))
+```
+
+## Moderated t-tests (k>2 groups)
+
+Let's subset the data to 16 hours after hormone treatment, and look for treatment effects at time 16 hours. 
+
+```{r Trt@16}
+time <- jbcdat$targets$hour
+trts <- factor(jbcdat$targets$treatment, 
+            levels=c("siNS","siCBP","sip300"))
+design <- model.matrix(~trts)
+
+fit <- lmFit(jbcdat$E,design,subset=c(time=="16hr"))
+
+contr.matrix <- cbind(siCBP=c(0,1,0),sip300=c(0,0,1))
+contr.matrix
+fitgpd <- contrasts.fit(fit,contr.matrix)
+fitgpd <- eBayes(fitgpd)
+```
+
+We can print a summary of the top hits with the topTable command.
+```{r topTablecontr}
+tt <- topTable(fitgpd,n=5)
+tt
+#fitgpd$coef[rownames(tt),]
+```
+
+The column named "P.Value" is for the F-test and tests the null hypothesis of the mean expression level is the same in all groups. We can find this result in our output from all F-tests by finding (matching) the position of the features by their names.
+
+```{r matchtopTablelocation}
+pos <- match(rownames(tt),rownames(fitgpd$coefficients))
+pos 
+fitgpd$F.p.value[pos]
+```
+
+How do we interpret a significant result? (This should be review from a previous statistics class.)
+
+## Venn diagram 
+
+We can create a Venn diagram to display the numbers of genes with p-value < less than some cutoff (here 0.05).
+
+```{r Venn2}
+results <- decideTests(fitgpd,
+                       method = "separate", 
+                       adjust.method="none",
+                       p.value = 0.05,
+                       lfc = 0)
+vennDiagram(results)
+```
+
+This time, the significant results are determined separately for each variable in the model (here, p < 0.05).
+
+Here is the table of counts:
+```{r results}
+table(results[,c("sip300")],results[,c("siCBP")])
+```
+
+The -1, 1 stands for the direction of the association.  So -1 means the gene is downregulated by treatment and 1 means it is up-regulated (increased expression). 0 is not differentially expressed (p>0.05).
+
+Here's how we can compute the numbers we saw earlier in the Venn-diagram.  
+
+Both significant: 2648 = 1095 + 1277 + 167 + 109   
+
+Only siCBP significant: 2733 = 1494 + 1239 
+
+Now we can also include the information in the Venn diagram on direction of effect, up-regulation or down-regulation.
+
+```{r VennUpDown}
+vennDiagram(results,include=c("up","down"),
+            counts.col=c("red", "blue"))
+```
+
+Again, we have to learn how to interpret these numbers.  Notice that the numbers in the middle overlapping area do not add up to the total 2648 that we observed earlier. That is because the earlier numbers included genes significant for both treatments, but acting in opposite directions (up/down) for the different treatment.  The red number now is the subset of genes that are up-regulated for *both* treatments (1095). The genes that were significant for both treatments, but acting in different directions now are counted in the red and blue numbers for the circle area unique to a treatment. So, the numbers of significant features unique to that treatment, are now larger than they were before (i.e. for siCBP: 1603 + 1406 = 3009 > 2733).  
+
+Here's a quick way to get the counts for up-regulated genes only:
+```{r countsUp}
+vennCounts(results,include=c("up"))
+```
+
+We can do the same for down-regulated genes only:
+```{r countsDown}
+vennCounts(results,include=c("down"))
+```
+
+## All Pairwise Differences
+
+We probably wouldn't do this for a study that has a control experiment like this one, but here's how we might go about looking at all pairwise differences if we were looking at a variable without a control group (i.e. never smoker, current smoker, former smoker).
+
+If we want to study all pairwise comparisons, we can do this by using a different design matrix and contrast matrix.
+
+```{r Trt@162}
+design <- model.matrix(~trts-1)
+design[1:4,]
+
+fit <- lmFit(jbcdat$E,design,subset=c(time=="16h"))
+
+contr.matrix <- cbind('siCBP-siNS'=c(-1,1,0),
+                   'sip300-siNS'=c(-1,0,1),
+                   'siCBP-sip300'=c(0,1,-1))
+contr.matrix
+
+fitgpd <- contrasts.fit(fit,contr.matrix)
+fitgpd <- eBayes(fitgpd)
+```
+
+```{r topTableTrt}
+topTable(fitgpd,n=5)
+```
+
+How is this model the same as the previous model?
+
+How is it different?
+
+```{r Venn}
+results <- decideTests(fitgpd,
+                       method = "separate", 
+                       adjust.method="none",
+                       p.value = 0.05,
+                       lfc = 0)
+vennDiagram(results)
+```
+
+## Saturated (Full) Model
+
+Now look for genes associated with Time, Co-Reg or Time x Co-Reg interaction.
+```{r mvm}
+time <- jbcdat$targets$hour
+trt  <- factor(jbcdat$targets$treatments, 
+            levels=c("siNS","siCBP","sip300"))
+design <- model.matrix(~trts*time)
+#design
+fit <- lmFit(jbcdat$E,design)
+
+contr.matrix <- cbind(siCBP      = c(0,1,0,0,0,0),
+                      sip300     = c(0,0,1,0,0,0),
+                      Time       = c(0,0,0,1,0,0),
+                      siCBPxTime = c(0,0,0,0,1,0), 
+                     sip300xTime = c(0,0,0,0,0,1))
+#contr.matrix
+fitfull <- contrasts.fit(fit,contr.matrix)
+fitfull <- eBayes(fitfull)
+topTable(fitfull,n=5)
+```
+
+Let's perform a global test of Ho: no difference across any level of time x treatment vs Ha: at least 1 difference.
+```{r Ftest}
+genesign <- which(fitfull$F.p.value<0.05)
+beta.p <- fitfull$p.value[genesign,]
+statsign <- ifelse(beta.p<0.05,1,0)
+vennDiagram(statsign)
+```
+
+## Plot single genes
+
+Let's see how the cell treatments affect the gene expression.
+
+```{r Tophitheterogeneity}
+thisone <- match("ILMN_1726114",rownames(fitfull))
+data <- data.frame(log2E = jbcdat$E[thisone,],
+                    type = jbcdat$targets$type)  
+data <- arrange(data,type) %>%
+        mutate(Index = 1:24)
+ggplot(data,  aes(x=Index, y=log2E, color = type)) + geom_point(size=2.5) +
+  labs(color="Type") + ylab("Log2 Expression") + ggtitle("ILMN_1726114")
+```
+
+This gene is differentially expressed upregulated by hormone exposure, and similar for all three treatment groups. We can look up the affected gene.
+
+```{r genesymbols}
+jbcdat$genes["ILMN_1726114",]
+```
+https://www.ncbi.nlm.nih.gov/gene/85414
+
+It mentions being highly expressed in prostate, and our cell line is a prostate cancer cell line.
+
+And now ILMN_1809583 (this was the 2nd hit from the earlier analysis of treatment only studying cells at 16hrs) :
+```{r gene3}
+thisone <- match("ILMN_1809583",rownames(fitfull))
+data <- data.frame(log2E = jbcdat$E[thisone,],
+                    type = jbcdat$targets$type)  
+data <- arrange(data,type) %>%
+        mutate(Index = 1:24)
+ggplot(data,  aes(x=Index, y=log2E, color = type)) + geom_point(size=2.5) + ggtitle("ILMN_1809583") +
+  labs(color="Type") + ylab("Log2 Expression")
+
+```
+
+This gene shows differential expression between the different knockdown treatments, but not with hormone treatment (time). 
+
+```{r genesymbols2}
+jbcdat$genes["ILMN_1809583",]
+```
+
+This sounds like it's the gene we targetted with our CBP knockdown experiment: 
+
+see https://www.ncbi.nlm.nih.gov/gene/1387.
+
+When it comes to summarizing the results, we could add annotation information to the summary tables, but that is still just a list of genes. It would be interesting if we could draw some overall conclusions of the biology based on the set of top genes. Gene set enrichment analysis tries to interpret the biology from the gene list.
+
+## SessionInfo
+
+```{r sessionInfo}
+sessionInfo()
+```
