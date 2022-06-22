@@ -1,0 +1,244 @@
+---
+title: "Class Activity -- Multiple Testing with filters"
+author: "Kim Siegmund"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# {.tabset}
+
+## 2-sample t-test: 10,000 genes 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(genefilter)
+library(limma)
+library(tidyverse)
+```
+
+I will the following default design settings:   
+
+* 100 samples
+
+* 10,000 genes:  500 differentially expressed, 9500 null 
+
+* 95\% genes are truly null ($\pi_0$)
+
+The large number of null genes accentuate the effect of multiple testing.
+
+First I'll get the real data and analyze it to get the estimates of standard deviation for the simulation. This will just be for the analysis of hormone response genes using the non-specific knockdown group.
+```{r jbcdat}
+load(file = c("../data/JBC 2012/jbcdat.rda"))
+geoid <- rownames(jbcdat$targets)[jbcdat$targets$treatment == "siNS"]
+subsetEobj <- function(dataobj,geonames){
+  subobj <-NULL
+     subobj$targets <- dataobj$targets[geonames,]
+     subobj$E       <- dataobj$E[,geonames]
+     subobj$genes   <- dataobj$genes
+     subobj
+}
+siNSobj <- subsetEobj(jbcdat,geoid)
+
+design <- model.matrix(~factor(siNSobj$targets$hour))
+fit  <- limma::lmFit(siNSobj$E,design)
+efit <- limma::eBayes(fit)
+sds <- sqrt(efit$s2.post)
+```
+
+
+Now I'll set the constants.
+
+```{r design-vals}
+nsamp <- 100       # number of samples
+n1     <- nsamp/2    # equal sample sizes in each group
+ng     <- 10000     # number of genes
+pinull    <- 0.95      # proportion of null genes
+G0     <- ng*pinull  # number of null genes
+set.seed(99)
+ssds <- sample(sds,ng) # sample, and randomize the order
+```
+
+Here is the function to simulate the data. The first G1 rows will be from the alternative (mean = delta) and the last G - G1 rows from the null (without loss of generality, mean=0).
+
+```{r simdat}
+simdat <- function(se,delta=0.02,nsamp=100,ng=10000,mn=0,pi0=0.95){
+  n1 <- nsamp/2   
+  gp  <- factor(rep(c("group1", "group2"), each=n1))
+    sdat <- replicate(nsamp,rnorm(n = ng, mean = mn, sd = se))
+     deg <- rep(0,ng)
+     # differential expressed genes (deg) occur in first G1 rows
+      G1 <- ng*(1-pi0)
+  deg[1:G1] <- 1
+  sdat[c(1:G1),c(1:n1)] <- sdat[c(1:G1),c(1:n1)] + delta
+    
+  list(E=sdat,targets=gp,genes=deg)
+}
+```
+
+## 1 dataset
+
+```{r rsimdat}
+set.seed(82) 
+sim1 <- simdat(ssds,delta=0.11)
+```
+
+Comment: Using 0.11 to represent the difference in means for all significant genes is not meant to be realistic, but it allows us to practice our multiple test correction methods. We've also made the simplifying assumption that all features are independent. This is approximately true for gene expression studies since the correlated subsets are small relative to the size of the testing problem, but this may not apply in different contexts. Then alternative methods should be considered.
+
+For each gene, perform a 2-sample t-test. 
+
+```{r multttests}
+tt=genefilter::rowttests(sim1$E,sim1$targets)
+```
+
+Here is a density plot of the t-statistics, with the values for the truly differentially expressed genes noted in red at the bottom.
+```{r histogram}
+plot(density(tt$statistic),main="t stats")
+rug(tt$statistic[sim1$genes==1],col=2)
+```
+
+## Unadjusted p
+
+```{r testresults}
+x <- table(nullg = 1-sim1$genes,sign=tt$p.value<0.05)
+x
+prop.table(x,2)
+```
+
+## No Filter
+
+2. Use Bonferroni adjustment
+
+```{r bonferroni_correction}
+Bonf.adjp <- p.adjust(tt$p.value,method="bonferroni")
+x <- table(nullg = 1- sim1$genes,sign=Bonf.adjp<0.05)
+x
+prop.table(x,2)
+```
+
+a. How many false-positives are there after a Bonferroni correction (adjusted p<0.05)?
+
+
+b. What is the false-discovery rate?
+
+
+c. How many differentially expressed genes do we find?
+
+
+
+3. Use Benjamini-Hochberg FDR adjusted p<0.05
+
+```{r fdr_correction}
+FDR.adjp <- p.adjust(tt$p.value,method="BH")
+x <- table(nullg = 1-sim1$genes,sign=FDR.adjp<0.05)
+x
+prop.table(x,2)
+```
+
+
+a. How many false-positives are there after a Benjamini and Hochberg FDR correction (FDR adjusted p<0.05)?
+
+
+b. What is the false-discovery rate?
+
+
+c. How many differentially expressed genes do we find?
+
+
+
+## Filter LFC
+
+```{r lfcfilt_bonferroni_correction}
+rlfc <- rank(abs(tt$dm))
+fidx <- which(rlfc > quantile(rlfc,0.5))
+
+Bonf.adjp <- p.adjust(tt$p.value[fidx],method="bonferroni")
+x <- table(nullg = (1-sim1$genes)[fidx],sign=Bonf.adjp<0.05)
+x
+prop.table(x,2)
+```
+
+```{r lfcfilt_BH_correction}
+rlfc <- rank(abs(tt$dm))
+fidx <- which(rlfc > quantile(rlfc,0.5))
+
+BH.adjp <- p.adjust(tt$p.value[fidx],method="BH")
+x <- table(nullg = (1-sim1$genes)[fidx],sign=BH.adjp<0.05)
+x
+prop.table(x,2)
+```
+
+
+What if we filter after we've performed our multiple-test correction?
+```{r BH_correction_thenfilt}
+rlfc <- rank(abs(tt$dm))
+fidx <- which(rlfc > quantile(rlfc,0.5))
+
+BH.adjp <- p.adjust(tt$p.value,method="BH")
+x <- table(nullg = (1-sim1$genes)[fidx],
+            sign = (BH.adjp<0.05)[fidx])
+x
+prop.table(x,2)
+```
+
+## 100 replicate datasets
+
+These functions will simulate 100 datasets and summarize the FDR and TPR
+
+```{r simfncs}
+nreject <- function(nullg, plist, a=0.05){
+       fp <-  sum(nullg[plist<a])
+       tp <- sum((1-nullg[plist < a]))
+       fdr <- mean(nullg[plist<a])
+       list(fp=fp, tp=tp,fdr=fdr)
+}
+
+tab.reject <- function(i,deg,plist) {
+     sim.out <- data.frame(rep = i,
+                method = c("rawp","bonf.adjp","bh.adjp","bonf.adjp.flfc",
+                  "bh.adjp.flfc"),
+                fp = rep(NA,5),
+                tp = rep(NA,5),
+                fdr = rep(NA,5)
+                  )
+     sim.out[1,3:5] <- nreject(nullg = 1-deg, plist)
+     sim.out[2,3:5] <- nreject(nullg = 1-deg, 
+                           plist = p.adjust(plist,method="bonferroni"))
+     sim.out[3,3:5] <- nreject(nullg = 1-sim1$genes, 
+                           plist = p.adjust(plist,method="BH"))
+     rf <- rank(abs(tt$dm))
+     fidx <- which(rf > quantile(rf,0.5))
+     sim.out[4,3:5] <- nreject(nullg = 1-sim1$genes[fidx], 
+                            plist = p.adjust(plist[fidx],
+                                             method="bonferroni"))
+     sim.out[5,3:5] <- nreject(nullg = 1-sim1$genes[fidx], 
+                           plist = p.adjust(plist[fidx],method="BH"))
+     sim.out
+}
+```
+
+```{r simout}
+set.seed(82)
+x <- rep(NA,5)
+for (i in 1:100) {
+   sim1 <- simdat(ssds,delta=0.11)
+     tt <- genefilter::rowttests(sim1$E,sim1$targets)
+      x <- rbind(x,
+                 tab.reject(i,sim1$genes,tt$p.value)
+      )
+}
+x <- x[-1,]
+```
+
+```{r sumresults}
+by_method <- x %>% group_by(method)
+by_method %>% summarise(
+      fp = mean(fp),
+    tp = mean(tp),
+    fdr = mean(fdr)
+)
+```
+
+## Session Information
+```{r sI}
+sessionInfo()
+```
