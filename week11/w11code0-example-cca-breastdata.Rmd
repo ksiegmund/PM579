@@ -1,0 +1,93 @@
+---
+title: "Example 2 CCA from PMD package"
+author: "Ks"
+date: "7/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Sparse canonical correlation analysis (CCA) is included in the PMA library we used in week 2 of this class for sparse PCA.
+
+```{r library}
+#install.packages("PMA")
+library(PMA)
+library(ComplexHeatmap)
+```
+
+# code is from Reference Manual PMA.pdf
+https://cran.r-project.org/web/packages/PMA/PMA.pdf
+
+
+## breast cancer data
+
+Let's run CCA on the breast cancer data trying type="ordered"
+
+Example involving the breast cancer data: gene expression + CGH
+CCA requires:   samples are rows, columns are features
+
+```{r pma}
+dataDir <- c("pm579data");
+load(file.path(dataDir,"breastdata.rda"))
+names(breastdata)
+```
+
+Number of gene expression measurements and samples:
+```{r sumdat}
+dim(breastdata$rna)
+```
+
+Number of copy number measurements:
+```{r sumdat}
+dim(breastdata$dna)
+#length(breastdata$chrom)  #chromosome
+#length(breastdata$nuc)    #nucleotide position of CGH spot
+cbind(breastdata$chrom,breastdata$nuc)[1:6,]
+```
+
+```{r plotcghdata}
+with(breastdata,PlotCGH(dna[,1], chrom=chrom, main="Sample 1", nuc=nuc))
+```
+
+
+```{r ccapermute}
+set.seed(22)
+dna <- t(dna)    
+rna <- t(rna)
+perm.out <- CCA.permute(x=rna,z=dna[,chrom==1],typex="standard", typez="ordered",nperms=5,
+                        penaltyxs=seq(.02,.7))
+```
+
+We run CCA using all gene exp. data, but CGH data on chrom 1 only.
+
+```{r chr1}
+print(perm.out)
+out <- CCA(x=rna,z=dna[,chrom==1], typex="standard", typez="ordered",penaltyx=perm.out$bestpenaltyx,
+v=perm.out$v.init, penaltyz=perm.out$bestpenaltyz, xnames=substr(genedesc,1,20),
+znames=paste("Pos", sep="", nuc[chrom==1])) 
+```
+
+Save time by inputting lambda and v
+
+```{r output}
+print(out) 
+#print(out, verbose = TRUE) 
+```
+
+```{r chr}
+print(genechr[out$u!=0]) 
+```
+
+Witten & Tibshirani's comment: Cool! The genes associated w/ gain or loss on chrom 1 are located on chrom 1!!
+
+```{r plotthem}
+par(mfrow=c(1,1))
+PlotCGH(out$v, nuc=nuc[chrom==1], chrom=chrom[chrom==1],
+main="Regions of gain/loss on Chrom 1 assoc'd with gene expression")
+```
+
+```{r si}
+sessionInfo()
+```
