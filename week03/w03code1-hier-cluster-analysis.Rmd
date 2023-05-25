@@ -1,0 +1,310 @@
+---
+title: "Hierarchical Cluster Analysis"
+author: "K Siegmund"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# {.tabset}
+
+## Libraries
+
+```{r installlibs}
+if(!require("ComplexHeatmap")){BiocManager::install("ComplexHeatmap")}
+#if(!require("matlab")){BiocManager::install("matlab")} this package is now archived
+#library(matlab)   # this library let's us use blue-red color spectrum for heatmap  (jet.colors)
+r <- getOption("repos")
+r["CRAN"] <- "http://cran.wustl.edu/"
+options(repos = r)
+
+if(!require("viridis"))  {install.packages("viridis")}
+
+library(ComplexHeatmap)
+library(viridis)  
+library(matrixStats)
+
+if(!require("dendextend")) {install.packages("dendextend")}
+library(dendextend)
+```
+
+Load Prostate Cancer Data
+
+```{r data}
+load("../data/JBC 2012/jbcdat.rda")
+```
+
+
+## Dendrograms 
+
+I'm going to cluster the 100 most variable genes, because clustering the genes will show greater differences between the different cluster methods than clustering samples. 
+
+```{r filterfeatures}
+rowscale <- function(x) {
+      (x - rowMeans(x))/matrixStats::rowMads(x)
+}
+
+fmad <- matrixStats::rowMads(jbcdat$E)
+rfilt <- rank(-fmad)
+fidx <- which( rfilt <= 100)
+```
+
+```{r cluster}
+X <- rowscale(jbcdat$E)[fidx,]
+fd <- as.dist(1-cor(t(X)))
+```
+
+**Average Linkage:**
+```{r avgl}
+hc <- hclust(fd, method = "average") 
+plot(hc,xlab=" ",main=" ",sub=" ",labels=FALSE)
+```
+
+**Single Linkage:**
+```{r sgll}
+hc <- hclust(fd, method = "single") 
+plot(hc,xlab=" ",main=" ",sub=" ",labels=FALSE)
+```
+
+**Complete Linkage:**
+```{r compl}
+hc <- hclust(fd, method = "complete") 
+plot(hc,xlab=" ",main=" ",sub=" ",labels=FALSE)
+```
+
+**Ward's ESS:**
+```{r ward2}
+hc <- hclust(fd, method = "ward.D2") 
+plot(hc,xlab=" ",main=" ",sub=" ",labels=FALSE)
+```
+
+
+## Complex Heatmap
+
+There is a very flexible function in R for creating complex Heatmaps.
+
+https://jokergoo.github.io/ComplexHeatmap-reference/book/introduction.html#general-design
+
+```{r complexheatmap}
+?Heatmap
+```
+
+To cluster both genes and samples, we will standardize the genes first, and then the samples. Then I'll use 1-correlation as pairwise dissimilarity and Ward's distance for the clustering criterion.
+
+```{r scaledatasubset}
+fmad <- matrixStats::rowMads(jbcdat$E)
+rfilt <- rank(-fmad)
+fidx <- which( rfilt <= 500)
+X <- rowscale(jbcdat$E)[fidx,]
+scX <- scale(X,center=TRUE,scale=matrixStats::colMads(X))
+```
+
+First, I will create the color bars for annotating the samples.
+```{r annotheatmap}
+jbcdat$targets$treatment <- factor(jbcdat$targets$treatment,
+                                   levels=c("siNS","siCBP","sip300"))
+
+# column heatmap annotation
+colha <- ComplexHeatmap::HeatmapAnnotation(df = 
+                       jbcdat$targets[,c("treatment","hour")],
+                col = list(treatment = c(siNS = "pink", 
+                                         siCBP = "purple",
+                                         sip300 = "orange"),
+                                 hour = c('0hr' = "grey",
+                                        '16hr' = "lightgreen")
+                          ), 
+                which = "column")
+```
+
+Now call the heatmap.
+
+**500 features, 1-Pearson dissimilarity**
+```{r ht}
+ht <- ComplexHeatmap::Heatmap(scX, column_title = "Samples",
+              row_title = "Features", 
+              name = "log2(Expr)",
+              clustering_distance_rows = "pearson",
+              clustering_method_rows = "ward.D2",
+              clustering_distance_columns = "pearson",
+              clustering_method_columns = "ward.D2",
+              col = viridis(32), 
+              top_annotation = colha,
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+
+draw(ht)
+```
+
+In the above figure, the clustering is performed on the (gene- then sample- standardized) log2 expression data. Our sample labels show that the replicate samples cluster well. It also shows that the p300 knock-down cells are most different from the rest at both timepoints.
+
+Comment: Since we standardized the columns, we get a very similar result using euclidean distance. They'd be identical if we'd standardized using standard deviation instead of median absolute deviation.
+
+Let's investigate using Euclidean distance for the (unstandardized) samples and changing the number of features.
+
+**500 features, sample Euclidean dissimilarity**
+```{r euclid-cols}
+fmad <- matrixStats::rowMads(jbcdat$E)
+rfilt <- rank(-fmad)
+fidx <- which( rfilt <= 500)
+X <- rowscale(jbcdat$E)[fidx,]
+
+ht <- ComplexHeatmap::Heatmap(X, column_title = "Samples",
+              row_title = "Features", 
+              name = "log2(Expr)",
+              clustering_distance_rows = "pearson",
+              clustering_method_rows = "ward.D2",
+              clustering_distance_columns = "euclidean",
+              clustering_method_columns = "ward.D2",
+              col = viridis(32), 
+              top_annotation = colha,
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+
+draw(ht)
+```
+
+It looks like there is no noticeable difference if we use Euclidean distance on the unstandardized samples. [Note: the genes are still standardized.] That suggests this result is robust to scaling of the samples. Now let's try this on 300 features. Let's go back to using correlation for the column similarities.
+
+**500 randomly sampled features, 1-correlation dissimilarity**
+```{r 500rsfeatures}
+set.seed(21)
+idx <- sample(c(1:nrow(jbcdat$E)),500)
+X <- rowscale(jbcdat$E)[idx,]
+scX <- scale(X,center=TRUE,scale=matrixStats::colMads(X))
+
+ht <- ComplexHeatmap::Heatmap(scX, column_title = "Samples",
+              row_title = "Features", 
+              name = "log2(Expr)",
+              clustering_distance_rows = "pearson",
+              clustering_method_rows = "ward.D2",
+              clustering_distance_columns = "pearson",
+              clustering_method_columns = "ward.D2",
+              col = viridis(32), 
+              top_annotation = colha,
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+
+draw(ht)
+```
+
+**300 (top mad) features, 1-correlation dissimilarity**
+```{r top300}
+fidx <- which(rfilt <= 300)
+X <- rowscale(jbcdat$E)[fidx,]
+scX <- scale(X,center=TRUE,scale=matrixStats::colMads(X))
+
+ht <- ComplexHeatmap::Heatmap(scX, column_title = "Samples",
+              row_title = "Features", 
+              name = "log2(Expr)",
+              clustering_distance_rows = "pearson",
+              clustering_method_rows = "ward.D2",
+              clustering_distance_columns = "pearson",
+              clustering_method_columns = "ward.D2",
+              col = viridis(32), 
+              top_annotation = colha,
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+
+draw(ht)
+```
+
+The bottom 6 clusters look like they're the same as when using 500 features, but the top 2 do not. Top clusters are unstable in hierarchical clustering algorithms.
+
+**100 (top mad) features, 1-correlation dissimilarity**
+```{r top100-pearson}
+fidx <- which(rfilt <= 100)
+X <- rowscale(jbcdat$E)[fidx,]
+scX <- scale(X,center=TRUE,scale=matrixStats::colMads(X))
+
+ht <- ComplexHeatmap::Heatmap(scX, column_title = " ",
+              row_title = "100 Features", 
+              name = " ",
+              clustering_distance_rows = "pearson",
+              clustering_method_rows = "ward.D2",
+              clustering_distance_columns = "pearson",
+              clustering_method_columns = "ward.D2",
+              col = viridis(32), 
+              top_annotation = colha,
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+
+draw(ht)
+```
+What has changed now?
+
+In the figure above we used pairwise correlation for the column similarities. What if we used euclidean distance instead?
+
+**100 (top mad) features, sample Euclidean dissimilarity**
+```{r top100-euclid}
+fidx <- which(rfilt <= 100)
+X <- rowscale(jbcdat$E)[fidx,]
+
+hte <- ComplexHeatmap::Heatmap(X, column_title = " ",
+              row_title = "100 Features", 
+              name = "log2(Expr)",
+              clustering_distance_rows = "pearson",
+              clustering_method_rows = "ward.D2",
+              clustering_distance_columns = "euclidean",
+              clustering_method_columns = "ward.D2",
+              col = viridis(32), 
+              top_annotation = colha,
+              show_column_names = FALSE,
+              show_row_names = FALSE)
+
+draw(hte)
+```
+
+And, since the row clustering isn't changing, we should be able to plot these side-by-side using complex heatmap...
+
+So what is the correct figure?
+
+## Extended Dendrograms
+
+```{r euc-avg}
+fidx <- which(rfilt <= 500)
+X <- rowscale(jbcdat$E)[fidx,]
+scX <- scale(X,center=TRUE,scale=matrixStats::colMads(X))
+```
+
+```{r extendhc}
+dend <- as.dist(1-cor(scX)) %>% # compute dissimilarity
+        hclust(method = "ward.D2") %>% # Hierarchical clustering 
+        as.dendrogram # Turn the object into a dendrogram.
+```
+
+*Color the leafs:*
+```{r colorleafs, warning=FALSE}
+cv <- c("black","yellow","red","blue","orange","purple","pink")
+type_color <- cv[unclass(jbcdat$targets$type)][order.dendrogram(dend)]
+
+dend %>% set("leaves_pch", c(16)) %>%  # node point type
+  set("leaves_cex", 2) %>%  # node point size
+  set("leaves_col", type_color) %>% #node point color
+  set("labels", "") %>%
+plot()
+```
+
+*Add color bars:*
+```{r customize, warning=FALSE}
+trtcol  <- c("purple","pink","orange")
+timecol <- c("grey","lightgreen")
+
+trt_bar <- trtcol[as.numeric(factor(jbcdat$targets$treatment))]
+trt_bar <- trt_bar[order.dendrogram(dend)]
+time_bar <- timecol[as.numeric(factor(jbcdat$targets$hour))]
+time_bar <- time_bar[order.dendrogram(dend)]
+s_bar <- cbind(trt_bar,time_bar)
+
+dend %>% set("labels", "") %>% plot
+colored_bars(s_bar,rowLabels = c("Treatment","Time"))
+```
+
+## Session Info
+
+```{r sessionInfo}
+sessionInfo()
+```
+
