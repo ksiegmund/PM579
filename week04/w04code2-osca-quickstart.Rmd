@@ -1,0 +1,206 @@
+---
+title: "OSCA: Quick Start to single-cell RNA seq"
+author: "ks"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# {.tabset}
+
+## Dataset
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+start <- Sys.time()
+if (!require(scRNAseq)) BiocManager::install("scRNAseq")
+if (!require(scater)) BiocManager::install("scater")
+if (!require(scran)) BiocManager::install("scran")
+if (!require(pheatmap)) BiocManager::install("pheatmap")
+```
+
+The following code is adapted from:
+http://bioconductor.org/books/3.17/OSCA.intro/analysis-overview.html#quick-start-simple
+
+The dataset is single cell expression from mouse retina. Begin by loading the data from the scRNAseq library & discard low quality cells. I do not plan to discuss the data cleaning steps, but you can read more on data cleaning here in Chapter 1 Quality Control (http://bioconductor.org/books/3.17/OSCA.basic/quality-control.html).
+
+```{r loaddata-qc}
+library(scRNAseq)
+sce <- MacoskoRetinaData()
+loaddatatime <- Sys.time()
+loaddatatime - start
+# Quality control (using mitochondrial genes).
+library(scater)
+is.mito <- grepl("^MT-", rownames(sce))
+qcstats <- perCellQCMetrics(sce, subsets=list(Mito=is.mito))
+filtered <- quickPerCellQC(qcstats, percent_subsets="subsets_Mito_percent")
+sce <- sce[, !filtered$discard]
+```
+
+
+```{r data-obj}
+sce
+```
+
+This object is an entire database, formatted in an object of the class: SingleCellExperiment. The expression data is in a matrix of `r nrow(sce)` genes and `r ncol(sce)` cells from a single sample.
+
+What does the counts matrix look like?  It has lots of 0 counts, where to save space the 0 counts are not recorded. We call this a sparse matrix. Here are the data for the first 5 rows and columns (genes and cells). 
+```{r counts}
+counts(sce)[1:5,1:5]
+```
+
+
+## Dimension Reduction
+
+Their analysis follows these steps:    
+1. Select the top 10% most variable genes       
+2. Run PCA on the selected genes and save the top 25 dimensions     
+3. Cluster the samples using the top 25 PCs and label the samples by their identified subgroups    
+4. Visualize the data: apply UMAP to the top 25 PCs and color the samples by their identified clusters.
+
+First, we normalize the sequence counts across the cells. We'll discuss this in more detail later in the semester, but basically it's a step to remove technical variation between cells. 
+```{r norm-counts}
+# Normalization.
+sce <- logNormCounts(sce)
+logcounts(sce)[1:5,1:5]
+```
+
+
+```{r feat-selection}
+# Feature selection
+library(scran)
+dec <- modelGeneVar(sce)
+hvg <- getTopHVGs(dec, p = 0.1)
+
+# PCA.
+library(scater)
+set.seed(1234)
+sce <- runPCA(sce, ncomponents=25, subset_row=hvg)
+
+# Clustering.
+library(bluster)
+colLabels(sce) <- clusterCells(sce, use.dimred='PCA',
+    BLUSPARAM=NNGraphParam(cluster.fun="louvain"))    
+```
+
+The cluster labels are stored in sce$label. Here's what the data look like in PC space. The cells are colored by their cluster label.
+
+```{r}
+plotReducedDim(sce, dimred="PCA", colour_by="label")
+```
+
+We have such a large number of data points and the clusters are hard to discern in a 2-dimensional space. Let's apply the more modern techniques that use a nearest-neighbor graph approach to data visualization. 
+
+## UMAP
+
+```{r viz-UMAP, fig.cap = 'UMAP plot of the retina dataset, where each point is a cell and is colored by the assigned cluster identity.'}
+# Visualization.
+startumap <- Sys.time()
+sce <- runUMAP(sce, dimred = 'PCA')
+plotUMAP(sce, colour_by="label")
+endumap <- Sys.time()
+endumap - startumap
+```
+
+
+## TSNE
+
+TSNE will take much longer to run.
+
+```{r viz-TSNE, fig.cap = 'TSNE plot of the retina dataset, where each point is a cell and is colored by the assigned cluster identity.'}
+# Visualization.
+starttsne <- Sys.time()
+sce <- runTSNE(sce, dimred = 'PCA')
+plotTSNE(sce, colour_by="label")
+endtsne <- Sys.time()
+endtsne - starttsne
+```
+
+## SCE Object
+
+Let's look at the data object with all its stored components. Each of the new data summaries has been added to the data object (logcounts, PCA, UMAP, TSNE).
+
+```{r updated-sce-obj}
+sce
+```
+
+## Find Markers
+
+Compare each cluster to each of the remaining clusters, and identify the top marker genes that are differentially expressed between the two subgroups. 
+
+What are the cluster sample sizes? Do we need to use a moderated t-statsitic or can we use an ordinary one?
+
+```{r cluster-sizes}
+table(sce$label)
+```
+
+These samples are big so we can use pairwise t-tests.
+
+### Pairwise t-tests
+
+We can filter these to just look at upregulated genes that show 2-fold higher expression in the cluster of interest.
+```{r}
+markers <- findMarkers(sce, test.type="t", direction="up", lfc=1) 
+# plot log-fold changes for one cluster over all other clusters
+# selecting cluster 1
+interesting <- markers[[1]]
+best_set <- interesting[interesting$Top <= 5, ]
+logFCs <- getMarkerEffects(best_set)
+pheatmap(logFCs, color=viridis::plasma(100))
+```
+
+The plotExpression() function allows us to see the distribution of the top genes by cluster.
+
+```{r}
+# plot log-transformed normalized expression of top genes for one cluster
+top_genes <- head(rownames(interesting))
+
+plotExpression(sce, x = "label", features = top_genes,
+               color_by = "label")
+```
+
+### Wilcoxon tests
+
+And, since these sample sizes are so large, we can switch to a non-parametric test which is preferred when looking for a marker for predicting subgroup. 
+
+```{r marker-detection}
+# Marker detection.
+markers <- findMarkers(sce, test.type="wilcox", direction="up")
+
+# returns a list with one DataFrame per cluster
+markers
+```
+
+```{r}
+# plot AUCs for one cluster over all other clusters
+# selecting cluster 1
+interesting <- markers[[1]]
+best_set <- interesting[interesting$Top <= 5, ]
+
+AUC <- getMarkerEffects(best_set,prefix = "AUC")
+pheatmap(AUC, color=viridis::plasma(100))
+```
+
+```{r}
+# plot log-transformed normalized expression of top genes for one cluster
+top_genes_wx <- head(rownames(interesting))
+
+plotExpression(sce, x = "label", features = top_genes_wx,
+               color_by = "label")
+
+```
+
+
+## Session Info
+
+```{r runtime}
+end <- Sys.time()
+end - start
+```
+
+
+```{r sI}
+sessionInfo()
+```
+
+
+
