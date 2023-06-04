@@ -108,11 +108,11 @@ TSNE will take much longer to run.
 
 ```{r viz-TSNE, fig.cap = 'TSNE plot of the retina dataset, where each point is a cell and is colored by the assigned cluster identity.'}
 # Visualization.
-starttsne <- Sys.time()
-sce <- runTSNE(sce, dimred = 'PCA')
-plotTSNE(sce, colour_by="label")
-endtsne <- Sys.time()
-endtsne - starttsne
+#starttsne <- Sys.time()
+#sce <- runTSNE(sce, dimred = 'PCA')
+#plotTSNE(sce, colour_by="label")
+#endtsne <- Sys.time()
+#endtsne - starttsne
 ```
 
 ## SCE Object
