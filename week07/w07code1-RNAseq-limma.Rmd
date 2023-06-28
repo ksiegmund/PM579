@@ -42,7 +42,7 @@ head(toc)
 
 The rownames are the Entrez gene id numbers.
 
-Let's find the counts for the 2 genes from Reddy et al. that showed differential expression for this experiment. We know the gene Symbol, but not the entrez gene id. Let's find their ENTREZID. The database org.Hs.eg.db links Entrez Gene ids (eg) to other annotation information for humans (Hs- homo sapiens), and include the link to gene Symbol. Here's how we can find the Entrez bene ID from the gene Symbol reported in the paper.
+Let's find the counts for the 2 genes from Reddy et al. that showed differential expression for this experiment. We know the gene Symbol, but not the entrez gene id. Let's find their ENTREZID. The database org.Hs.eg.db links Entrez Gene ids (eg) to other annotation information for humans (Hs- homo sapiens), and include the link to gene Symbol. Here's how we can find the Entrez gene ID from the gene Symbol reported in the paper.
 
 ```{r loadDB}
 #library(org.Hs.eg.db)
@@ -105,7 +105,7 @@ First step is to remove rows with 0 or consistently low counts.
  dim(dge)
 ```
 
-Next, we apply a scale-normalization to the read counts, to normalize the samples for variation in library size (total read counts).  We will use the default method, TMM (trimmmed mean of M-values. It is yet ANOTHER normalization method, but a good one.)
+Next, we apply a scale-normalization to the read counts, to normalize the samples for variation in library size (total read counts).  We will use the default method, TMM (trimmed mean of M-values. It is yet ANOTHER normalization method, but a good one.)
 ```{r TMM}
 dge <- edgeR::calcNormFactors(dge)
 ```
@@ -137,7 +137,7 @@ If the ratio of largest to smallest library is less than 3, the limma package ha
 ## Differential Expression (w/voom)
 
 If the library sizes vary widely across samples, 
-tranforming the counts to microarray-like measures using the function voom is recommended. This is available in the limma package.
+transforming the counts to microarray-like measures using the function voom is recommended. This is available in the limma package.
 ```{r voom}
 design <- model.matrix(~dge$samples$group)
 v <- limma::voom(dge,design,plot=TRUE)
@@ -160,7 +160,7 @@ options(digits=3)
 limma::topTable(vfit)
 ```
 
-Let's count the differentially expressed genes with FDR adjusted p<0.05.
+Let's count the differentially expressed genes with FDR-adjusted p<0.05.
 ```{r decideTestsv}
 summary(de <- limma::decideTests(vfit, p=0.05))
 ```
