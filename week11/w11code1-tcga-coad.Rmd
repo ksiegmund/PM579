@@ -11,7 +11,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(ggplot2)
 library(PMA)
-library(corrplot)
+if (!require(corrplot))  {install.packages("corrplot"); library(corrplot)}
 ```
 
 ## TCGA colon adenocarcinoma
