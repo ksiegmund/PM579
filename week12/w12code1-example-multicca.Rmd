@@ -45,7 +45,6 @@ How many 'blocks' of data? How many variables in each block?
 ```{r}
 
 
-
 ```
 
 
@@ -55,9 +54,12 @@ Describe the matrix: u%*%t(v1)
 ```
 
 Describe the matrix x1.
+x1 = u%*%t(v1) + matrix(rnorm(50*100),ncol=100)
 
 
-
+```{r}
+corrplot::corrplot(x2,is.corr=FALSE,addgrid.col=NA)
+```
 
 
 
@@ -90,39 +92,31 @@ print(out)
 ```
 
 
-How many variables are selected from each of the 3 blocks of data?
+How many variables are selected from each of the 3 blocks of data? Consider just the first cannonical variable.
 ```{r}
-
 
 ```
 
 How many of the first 25 variables are identified?
 ```{r}
 
-
 ```
 
 
 
-Verify out$cors[1]=2.581712 from the output.    
+Verify out$cors[1]=1.902578 from the output.    
 
 HINT: cor(x1cc1,x2cc1) + cor(x1cc1,x3cc1) + cor(x2cc1,x3cc1)
-
 ```{r}
-
 
 
 ```
 
 
-
-
-
-Comment: Making use of the fact that the features are ordered we can visualize the weights like this:
-
 ```{r}
-PlotCGH(out$ws[[2]][,1], chrom=rep(2,ncol(x2)))
+
 ```
+
 
 
 
