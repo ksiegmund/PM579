@@ -7,6 +7,10 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+r = getOption("repos")
+r["CRAN"] = "http://cran.us.r-project.org"
+options(repos = r)
+
 if (!require(ggplot2)) {install.packages("ggplot2")}
 if (!require(matrixStats)) {install.packages("matrixStats")}
 if (!require(tidyr)) {install.packages("tidyr")}
