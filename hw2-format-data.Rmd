@@ -1,0 +1,95 @@
+---
+title: "Homework 2 - format data"
+author: "ks"
+date: "5/25/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loadlibraries}
+if(!require("GEOquery")) {BiocManager::install("GEOquery")}
+library(GEOquery)
+library(tidyverse)
+library(purrr)
+```
+
+## Read GEO dataset
+
+GEO assession: GSE38571
+
+These data are from Marconett et al. Integrated transcriptomic and epigenomic analysis of primary human lung cell differentiation. PLoS Genet 2013. PMC3688557. The investigators studied alveolar epithelial cells from lung tissue, conducting in vitro experiments to mimic the normal regenration process of alveolar type 2 cells to alveolar type 1 cells following lung injury. Alveolar type 2 (AT2) cells (day 0) are differentiated into alveolar type 1 (AT1)-like cells at day 8. Gene expression is measured at days 0, 2, 4, 6, 8 using the Illumina HT12v4 array.
+
+```{r geoquery}
+gse38571 <- getGEO('GSE38571',GSEMatrix=TRUE)
+show(gse38571)
+```
+
+## Gene expression data
+
+```{r gexdata}
+geodat <- gse38571$`GSE38571-GPL10558_series_matrix.txt.gz`
+aec <- NULL
+aec$E <- exprs(geodat)    # exprs() accesses the gene expression values
+aec$E[1:4,1:3] 
+```
+
+## Sample annotation data
+
+```{r pdata}
+pData(geodat)$title 
+```
+
+And compare the column order from the gene expression data to the row order of the sample annotation data.
+
+```{r checkorder}
+identical(colnames(aec$E),
+          as.character(pData(geodat)$geo_accession))
+```
+
+Good. The data matrices are identically ordered, linking the data in each.
+
+Now let's extract the barcode and the observation day from the table named pData(geodat)$title.
+
+```{r targets}
+trt <- strsplit(as.character(pData(geodat)$title)," ")
+day <- map_chr(trt,pluck,3)
+barcode <- map_chr(trt, ~pluck(.x, length(.x)))
+barcode <- sub("X","",barcode)
+aec$targets <- cbind.data.frame(barcode,day)
+rownames(aec$targets) <- as.character(pData(geodat)$geo_accession)
+aec$targets
+```
+
+These data represent time-series (days 0, 2, 4, 6, 8) from differentiating the alveolar epithelial cells from lung tissue in three women. 
+
+Searching around other pData(geodat) list objects I found that pData(geodat)$characteristics_ch1.3 contains the age variable.
+
+```{r addage}
+trt <- strsplit(as.character(pData(geodat)$characteristics_ch1.3)," ")
+aec$targets$age <- as.numeric(map_chr(trt,pluck,3))
+aec$targets
+```
+
+I didn't find a subject ID, but the unique ages will tell us which samples are from the same individual.  
+
+## Gene annotation data
+
+```{r fdata}
+   #names(fData(geodat))
+   aec$genes <- cbind.data.frame(fData(geodat)[,c("Entrez_Gene_ID","Symbol")])
+   head(aec$genes)
+```
+
+Now we can save the data set for you to access and use for homework #2.
+
+```{r savedata}
+    names(aec)
+    save(aec,file = c("data/aec.rda"))
+```
+
+```{r sessioninfo}
+sessionInfo()
+```
