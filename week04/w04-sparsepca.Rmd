@@ -1,0 +1,187 @@
+---
+title: "Sparse PCA and Variable selection"
+author: "K Siegmund"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# {.tabset}
+
+## R Libraries
+
+```{r rlibraries}
+if (!require(ggplot2)) install.packages("ggplot2")
+if (!require(plotly)) install.packages("plotly")
+if (!require(sparsepca)) install.packages("sparsepca")
+if (!require(GGally)) install.packages("GGally")
+library(matrixStats)
+```
+
+## Dataset
+
+
+```{r loaddata}
+load("../data/JBC 2012/jbcdat.rda")
+```
+
+We're working with the same prostate cancer cell line data from weeks 1-3. Let's prep the data for PCA.  First, we transpose the expression matrix so that the rows are the samples and the columns are the features.
+
+```{r dim-data}
+# transpose the expression matrix
+tE <- t(jbcdat$E)
+dim(tE)
+```
+
+Now, we center the columns to have mean 0 and scale them by their median absolute deviation (MAD).
+
+```{r sdzpca}
+sdztE <- scale(tE,center=TRUE,scale=
+                 matrixStats::colMads(tE))
+```
+
+In week 2 we ran PCA twice, once using all features and once using the subset of the 500 most variable genes. Let's find the 500 most variable genes (using MAD) for this.
+
+```{r top500}
+fmad  <- matrixStats::rowMads(jbcdat$E)
+rfmad <- rank(-fmad)
+fidx <- which(rfmad <= 500)
+```
+
+## 2-D PCA
+
+In week 2 we used a standard singular value decomposition to perform PCA for high-dimensional data. Let's re-create our results from week 2, and see how they compare to the results from a new method called sparse PCA.
+
+First, the results after filtering on the top 500 variable genes.
+
+```{r top500pca,fig.cap='PCA of 24 gene expression arrays using 500 most variable features.'}
+pca.topg <- prcomp(sdztE[,fidx],retx=TRUE)
+dfx.topg <- as.data.frame(pca.topg$x)
+
+ggplot(dfx.topg,  aes(x=PC1, y=PC2, color = jbcdat$targets$type )) + geom_point(size=2.5) +
+  labs(color="Treatment")
+```
+
+This shows the samples clustering by the biological replicates.
+
+Now, the results using all 47k+ genes.
+
+```{r pcaall, fig.cap='PCA of 24 gene expression arrays using 47,231 features.'}
+pca.all <- prcomp(sdztE,retx=TRUE)
+dfx.all <- as.data.frame(pca.all$x)
+
+ggplot(dfx.all,  aes(x=PC1, y=PC2, color = jbcdat$targets$type )) + geom_point(size=2.5) + labs(color="Treatment")
+```
+
+PC1 separates siP300 vs. the rest. PC2 has 2 dots of each color above and below 0.  Should we be surprised it is symmetric?
+
+Let's apply sparse PCA next, a method that performs variable selection during the PC analysis, and compare the results to the above two figures.
+
+## Sparse PCA
+
+We run sparse PCA on all genes.
+
+```{r spca, echo=FALSE, fig.cap='Sparse PCA of 24 gene expression arrays.'}
+# Compute SPCA
+out <- spca(sdztE, k=3, alpha=1e-3, beta=1e-3, center = TRUE, scale = FALSE, verbose=0)
+summary(out)
+```
+
+```{r plotspca}
+sPCs <- as.data.frame(out$scores)
+colnames(sPCs) <- c("sPC1","sPC2","sPC3")
+ggplot(sPCs, aes(x=sPC1, y=sPC2, color=jbcdat$targets$type)) +
+  geom_point(size=2.5) +
+  labs(color="Treatment")
+```
+
+This looks **a lot** like the PC plot of all 47k+ features! Let's compute the pairwise correlations between the PCs for the standard PCA with those from sparse PCA.
+
+```{r pcacompare, fig.cap='Top 3 PCs from standard PCA and from sparse PCA.'}
+ggpairs(cbind(dfx.all[,c(1:3)],sPCs[,c(1:3)]))
+```
+
+Comparing PCs from SVD to those from sparse PCA, PCs1-3 are very similar (correlations all > 0.98).
+
+## Sparse PCA loadings
+
+Now let's try to identify the features that explain this variation. 
+
+The PCs are linear combinations (weighted averages) of the original features (variables). The PC 'loadings' are the weights in the linear combination.  In sparse PCA, most of the weights are assigned 0, which excludes those features from the PC. The name 'sparse' PCA suggests there are relatively few features that contribute to the biological signal (have non-zero weights). Let's check our understanding by computing the PCs from the data and loadings matrix ourselves. Then we want to interpret the signal that is captured from the non-zero weights.
+
+Compute the PCs for the first 3 observations:
+```{r calc-pcs}
+# Note:  sdztE is already column-centered
+sdztE[1:3,] %*% out$loadings
+out$scores[1:3,]
+```
+
+The same!  
+
+How many features predict each PC? Let's summarize the loadings (weights). What is the dimension of the loadings matrix? There are `r nrow(out$loadings)` weights. How many of the weights are non-zero?
+```{r sum-loadings}
+colSums(out$loadings != 0)
+```
+
+Nice!  This says we only need ~750-1200 features to represent these 3 PCs. This is far fewer than the total 47k+. 
+
+Are the features overlapping, or unique? 
+```{r VennD}
+limma::vennDiagram(ifelse(out$loadings!=0,1,0))
+```
+
+They are mostly unique. For each of the first three PCs, more than 92% of features that contribute to the PC only contribute to the one (e.g., 729/781 = 0.933 features specific to PC1).
+
+Do any of my 500 most variable genes overlap these groups?
+```{r overlapping-features}
+colSums(out$loadings[fidx,] != 0)
+```
+
+What do we conclude from this?
+
+
+## PCA by SVD loadings
+
+If I go back to the loadings from the original (non-sparse) PCA, how many do you think are non-zero? Let's check!
+
+First, let me compute the PCs myself so that I know I'm grabbing the correct weight matrix. Using the standard PCA function, the matrix of loading values (weights) is called 'rotation'.
+```{r calc-pcs-std-pca}
+sdztE[1:3,] %*% pca.all$rotation[,1:3]
+pca.all$x[1:3,1:3]
+```
+
+Yes! This gives me the PCs (stored in pca.all$x).
+
+How many features contribute to each PC? (are non-zero)
+Let's summarize the loadings.
+```{r non-zero-loadings}
+colSums(pca.all$rotation != 0)
+```
+
+Every PC uses all 47231 features.  None of the weights are 0 by chance.
+
+## Explaining PC2
+
+Let's go back to try to explain PC2. Recall that there was a symmetry in the number of samples above and below 0 for each treatment. When are samples balanced?  When performing experimental designs, we balance across nuisance variables that can introduce noise.  Here's the culprit:
+
+```{r PC2-variation}
+ggplot(sPCs, aes(x=sPC1, y=sPC2, 
+                color=substring(jbcdat$targets$barcode,1,10))) +
+  geom_point(size=2.5) +
+  labs(color="BeadChip")
+```
+
+The 24 samples were run on two BeadChips and there was technical variation between the chips that gets picked up by PC2. 
+
+Sparse PCA selected `r sum(out$loadings[,2] != 0)` non-zero features for PC2, which was more features than selected for either PC1 or PC3.  Also, none of these `r sum(out$loadings[,2] != 0)` features appeared in our list of top 500 variable features. So, it is not a surprise that we did not see the technical variation due to BeadChip when did PCA on the top 500 variable features.  
+
+**What do we conclude?**  The variation we pick up from PCA is a combination of the variation of the individual features and the number of correlated features. The batch effect of the BeadChip picked up a small signal (small variance across individual features) if that small signal is captured by many features.
+
+## sessionInfo
+
+```{r sessionInfo}
+sessionInfo()
+```
+
