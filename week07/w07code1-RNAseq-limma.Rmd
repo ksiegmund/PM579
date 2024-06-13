@@ -28,12 +28,10 @@ show(cnts)
 To run Differential Expression analysis we'll need some new libraries.
 ```{r libs}
 #if(!require("GenomicAlignments")) {BiocManager::install("GenomicAlignments")}
-if(!require("edgeR")) {BiocManager::install("edgeR")}
-if(!require("org.Hs.eg.db")) {BiocManager::install("org.Hs.eg.db")}
+if(!require("edgeR")) {BiocManager::install("edgeR"); library(edgeR)}
+if(!require("org.Hs.eg.db")) {BiocManager::install("org.Hs.eg.db"); library(org.Hs.eg.db)}
 
 #library(GenomicAlignments)
-library(org.Hs.eg.db)
-library(edgeR)
 ```
 
 This will access the matrix table of counts. 
@@ -71,7 +69,8 @@ show(sel[1:5,])
 
 Next, we'll create a variable for the treatment information taken from the column names.
 ```{r trtinfo}
-group <- sub(c("Rep."),"",colnames(cnts))
+#group <- sub(c("Rep."),"",colnames(cnts))
+group <- sub(c("Rep."),"",colnames(toc))
 group <- factor(group,levels=c("Etoh02","Dex100nm"))
 group
 ```
@@ -82,8 +81,8 @@ For microarray data analysis, the sd was approximately independent of average in
 
 We begin with creating a list variable (DGEList) used for differential expression of count data.
 ```{r dgelist}
-dge <- edgeR::DGEList(counts=assays(cnts)$counts,
-             group=group)
+#dge <- edgeR::DGEList(counts=assays(cnts)$counts,
+dge <- edgeR::DGEList(counts=toc, group=group)
 dim(dge)
 ```
 
@@ -219,7 +218,8 @@ Voom identified more features.
 
 Let's go back to the data set and process it for the negative binomial regression analysis.
 ```{r edgeR}
-y <- DGEList(counts=assays(cnts)$counts,
+#y <- DGEList(counts=assays(cnts)$counts,
+y <- DGEList(counts=toc,
              group=group)
 dim(y)
 ```
