@@ -1,0 +1,266 @@
+---
+title: "RNA seq"
+author: "ks"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# {.tabset}
+
+## A549 Data
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The data are for 4 experiments in A549 cells downloaded from ENCODE  (Reddy et al. 2009).  https://pubmed.ncbi.nlm.nih.gov/19801529/
+
+
+R uses a data object called SummarizedExperiment for storing count data in an object. The rows represent genomic ranges of interest and the columns are samples. That is the format used to store the counts from the ENCODDE data analyzed here.
+
+```{r loadData}
+load(file="../data/RNAseq/cnts.rda")
+show(cnts)
+
+#save(toc,file="../data/RNAseq/toc.rda")
+```
+
+To run Differential Expression analysis we'll need some new libraries.
+```{r libs}
+#if(!require("GenomicAlignments")) {BiocManager::install("GenomicAlignments")}
+if(!require("edgeR")) {BiocManager::install("edgeR")}
+if(!require("org.Hs.eg.db")) {BiocManager::install("org.Hs.eg.db")}
+
+#library(GenomicAlignments)
+library(org.Hs.eg.db)
+library(edgeR)
+```
+
+This will access the matrix table of counts. 
+```{r TableOfCounts}
+#toc <- assays(cnts)$counts
+load(file="../data/RNAseq/toc.rda")
+head(toc)
+```
+
+The rownames are the Entrez gene id numbers.
+
+Let's find the counts for the 2 genes from Reddy et al. that showed differential expression for this experiment. We know the gene Symbol, but not the entrez gene id. Let's find their ENTREZID. The database org.Hs.eg.db links Entrez Gene ids (eg) to other annotation information for humans (Hs- homo sapiens), and include the link to gene Symbol. Here's how we can find the Entrez gene ID from the gene Symbol reported in the paper.
+
+```{r loadDB}
+#library(org.Hs.eg.db)
+keys <- c("NFKBIA","PER1")
+sel <- select(org.Hs.eg.db,keys=keys,columns="ENTREZID",
+            keytype="SYMBOL")
+show(sel)
+```
+
+Now let's see the gene counts for these 2 genes.  In Reddy et al., NHKBIA shows increased expression with DEX treatment.
+```{r selectData}
+toc[sel$ENTREZID,]
+```
+
+If we wanted to get the gene Symbols for all the genes in our count matrix, we can link the names in the other direction.
+```{r eg2symbol}
+keys <- rownames(toc)
+sel <- select(org.Hs.eg.db,keys=keys,columns="SYMBOL",
+            keytype="ENTREZID")
+show(sel[1:5,])
+```
+
+
+Next, we'll create a variable for the treatment information taken from the column names.
+```{r trtinfo}
+group <- sub(c("Rep."),"",colnames(cnts))
+group <- factor(group,levels=c("Etoh02","Dex100nm"))
+group
+```
+
+The default ordering when you make a factor variable is to alphabetize the groups. Here, since Etoh02 is the control experiment, I want appearing first so I set this using 'levels=c("Etoh02","Dex100nm")'.
+
+For microarray data analysis, the sd was approximately independent of average intensity, so we assumed a single variance estimate for the prior and shrunk the feature-specific sds to the prior. With log2 count data, we're going to see the relationship between sd and average log2 intensity is not constant, so we model it using a trend. Then we shrink our variance estimates to a point on the trend-line.
+
+We begin with creating a list variable (DGEList) used for differential expression of count data.
+```{r dgelist}
+dge <- edgeR::DGEList(counts=assays(cnts)$counts,
+             group=group)
+dim(dge)
+```
+
+Show summary of data table.
+```{r datatable}
+dge$samples
+```
+
+
+Notice how large the last library is. It's much larger than the first 3. 
+
+```{r headcounts}
+head(dge$counts)
+```
+
+
+First step is to remove rows with 0 or consistently low counts.
+```{r filter}
+ design <- model.matrix(~dge$samples$group)
+ keep <- edgeR::filterByExpr(dge, design)
+ dge <- dge[keep,,keep.lib.sizes=FALSE]
+ dim(dge)
+```
+
+Next, we apply a scale-normalization to the read counts, to normalize the samples for variation in library size (total read counts).  We will use the default method, TMM (trimmed mean of M-values. It is yet ANOTHER normalization method, but a good one.)
+```{r TMM}
+dge <- edgeR::calcNormFactors(dge)
+```
+
+## Data Summary
+
+Let's look at the distribution of gene counts.
+
+```{r boxplot,echo=F}
+par(mar=c(7,4,0,4))
+boxplot(log2(dge$counts+1),col=as.numeric(group)+1,
+        las=2)
+```
+
+Do samples cluster by treatment group? The default method of plotMDS is to transform the counts per million to log counts per million for analysis.
+
+```{r mdsplot, echo=F}
+limma::plotMDS(dge,labels =dge$samples$group,lwd=2,cex=1.5,
+        cex.axis=1.3,cex.lab=1.5)
+box(lwd=3)
+```
+
+```{r libsizes}
+  dge$samples
+```
+ 
+If the ratio of largest to smallest library is less than 3, the limma package has a new option for differential expression of RNA-seq counts. We will run it later (limma::eBayes(fit, trend=TRUE))
+
+## Differential Expression (w/voom)
+
+If the library sizes vary widely across samples, 
+transforming the counts to microarray-like measures using the function voom is recommended. This is available in the limma package.
+```{r voom}
+design <- model.matrix(~dge$samples$group)
+v <- limma::voom(dge,design,plot=TRUE)
+```
+
+Now I can do the moderated t-test analysis (using eBayes) on the voom-transformed data.
+```{r eBayesv}
+fit <- limma::lmFit(v,design)
+# fit has 2 coefficients: intercept + Coef of interest
+contr.matrix <- as.matrix(c(0,1))
+colnames(contr.matrix) <- c("Dex100")
+# This will reduce the model output to the coef of interest only
+fit <- contrasts.fit(fit,contr.matrix)
+vfit <- limma::eBayes(fit)
+```
+
+What does the table of top hits look like?
+```{r tophits}
+options(digits=3)
+limma::topTable(vfit)
+```
+
+Let's count the differentially expressed genes with FDR-adjusted p<0.05.
+```{r decideTestsv}
+summary(de <- limma::decideTests(vfit, p=0.05))
+```
+
+How do we know the p-values were BH-adjusted?
+
+Now let's show them on an MA plot. These authors now call this an MD-plot for mean-difference (x-axis vs y-axis). 
+```{r MAplotv}
+detags <- which(as.logical(de))
+limma::plotMD(vfit)
+points(vfit$Amean[detags],vfit$coef[detags],
+     pch=16,cex=0.7,col="red")
+abline(-1,0,col="blue")
+abline(1,0,col="blue")
+```
+
+## Limma-trend
+
+Here's a different option, that allows us to analyze the count data using the log-transformed counts per million (libsize). This is only recommended when the library sizes aren't too different (ratio of 3-fold between largest and smallest). A prior count is used to shrink the variances of the logarithms of low counts. (I'm taking this from the manual, and need to study it more.)
+
+```{r lcpm}
+logCPM <- edgeR::cpm(dge, log=TRUE, prior.count=3)
+```
+
+These logCPM values can be used in any standard limma analysis, using the option trend=TRUE when running eBayes to allow the relationship of variance vs intensity to follow a trend.
+
+```{r eBayes}
+fit <- limma::lmFit(logCPM, design)
+#contr.matrix <- as.matrix(c(0,1))
+#colnames(contr.matrix) <- c("Dex100")
+fit <- contrasts.fit(fit,contr.matrix)
+efit <- limma::eBayes(fit, trend=TRUE)
+limma::topTable(efit)
+```
+
+The 2 results from Reddy et al. (2009) are in the top 10 genes (Entrez Gene IDs 5187 and 4792).
+
+How many tests are statistically significant?
+```{r decideTests}
+summary(de <- limma::decideTests(efit, p=0.05))
+```
+
+
+How similar are the results using the data transformation (voom) and using the trend option on the log2 CPM data?
+```{r CompareResults}
+table(voom=limma::decideTests(vfit,p=0.05),
+      trendlimma=limma::decideTests(efit,p=0.05))
+```
+
+Voom identified more features.
+
+## Negative-Binomial Regression
+
+Let's go back to the data set and process it for the negative binomial regression analysis.
+```{r edgeR}
+y <- DGEList(counts=assays(cnts)$counts,
+             group=group)
+dim(y)
+```
+
+```{r filtery}
+ design <- model.matrix(~y$samples$group)
+ keep <- edgeR::filterByExpr(y, design)
+ y <- y[keep,,keep.lib.sizes=FALSE]
+ dim(y)
+```
+
+See edgeRUsersGuide() for sample scripts to run analysis.
+The function will estimate a common dispersion, trended, and then tagwise. The tagwise estimates are shrunk towards the trend line for better estimation. Use of tagwise dispersion in DGE analysis is preferred so as to be more robust to outliers.
+
+```{r ecd}
+design <- model.matrix(~group)
+y.GLM <- estimateDisp(y, design)
+names(y.GLM)
+plotBCV(y.GLM,cex.axis=1.2,cex.lab=1.2)
+```
+
+BCV = 0.081 is on the low side. We only hav 4 replicates, and they are all from a single cell line.
+
+
+Here is the regression model using negative-binomial regression. It would also allow us to adjust for other variables if desired. This approach will be much more computationally demanding than limma for larger datasets, making the limma approach preferred. (They are both fast for small datasets.)
+```{r model}
+fit <- glmFit(y.GLM,design)
+lrt <- glmLRT(fit,coef=2)
+topTags(lrt)
+```
+
+The 2 results from Reddy et al. (2009) are still in the top 10 genes (Entrez Gene IDs 5187 and 4792).
+
+The approach happens to reject more tests than the limma method. All of these hits would require validation.
+```{r CompareResultsLRT}
+table(LRT=decideTestsDGE(lrt,p=0.05),
+      voom=decideTests(vfit))
+```
+
+## SessionInfo
+
+```{r sessionInfo}
+sessionInfo()
+```
