@@ -255,7 +255,7 @@ The 2 results from Reddy et al. (2009) are still in the top 10 genes (Entrez Gen
 
 The approach happens to reject more tests than the limma method. All of these hits would require validation.
 ```{r CompareResultsLRT}
-table(LRT=decideTestsDGE(lrt,p=0.05),
+table(LRT=decideTests(lrt,p=0.05),
       voom=decideTests(vfit))
 ```
 
