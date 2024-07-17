@@ -15,7 +15,7 @@ The code for this lab was mostly taken verbatim (with some omissions), from tuto
 
 http://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA/Tutorials/index.html
 
-The Principal Investigator (Horvath) left UCLA, the website is gone, and I don't see it a replacement site.
+The Principal Investigator (Horvath) left UCLA, the website is gone, and I don't see a replacement site.
 
 # {.tabset}
 
