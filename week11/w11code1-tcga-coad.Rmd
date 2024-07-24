@@ -185,11 +185,11 @@ table(coad$fdnam$Chr)
 
 X chromosome methylation is different in males and females (X chromosome inactivation).  This is something you will always have to look out for when analyzing males and females together.
 
-```{r fraction-sexchrfeatures}
+```{r fraction-xychrfeatures}
 sum(is.element(coad$fdnam$Chr,c("X","Y"))/length(coad$fdnam$Chr))
 ```
 
-Just $7.6\%$ of the features are on sex chromosomes but when we filter on variance, we're selecting these into our analysis set  and they will have a large impact on the cluster results. Let's drop the features on the sex chromosomes before performing our dimension reduction techniques.
+Just $7.6\%$ of the features are on X and Y chromosomes but when we filter on variance, we're selecting these into our analysis set  and they will have a large impact on the cluster results. Let's drop the features on the X and Y chromosomes before performing our dimension reduction techniques.
 
 ```{r filtXY}
 mdnam <- mcoad[
