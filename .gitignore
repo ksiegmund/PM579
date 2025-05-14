@@ -3,5 +3,6 @@
 .Rhistory
 .RData
 .Ruserdata
+.PM579.Rproj
 *.dta
 *.html
