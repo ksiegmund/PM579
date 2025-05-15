@@ -20,11 +20,11 @@ The download from GEO can take a few minutes, depending on computer and internet
 
 ```{r libraries}
 library(purrr)
-#if(!require("GEOquery")) {BiocManager::install("GEOquery")}
-#library(GEOquery)
+if(!require("GEOquery")) {BiocManager::install("GEOquery")}
+library(GEOquery)
 #gse31873<-getGEO('GSE31873',GSEMatrix=TRUE)
 
-load("data/JBC 2012/gse31873.rda")
+load("../data/JBC 2012/gse31873.rda")
 ```
 
 ```{r showgse}
