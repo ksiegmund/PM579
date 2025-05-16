@@ -112,7 +112,6 @@ library(limma)
 
 limma::plotMDS(jbcdat$E,labels=jbcdat$targets$type,
         col=unclass(jbcdat$targets$type),
-        xlim = c(-1.5,1.5), ylim=c(-1,1),
         main="MDS plot") #color by type
 ```
 
