@@ -1,0 +1,268 @@
+---
+title: "Differential Expression - 2 groups"
+author: "ks"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# {.tabset}
+
+
+## Prostate data
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+st <- Sys.time()
+if (!require(genefilter)) BiocManager::install("genefilter")
+library(genefilter)
+library(limma)
+library(ggplot2)
+```
+
+There was a total of 6 treatment groups, but I'm going to introduce 2-sample t-tests by focusing on just two treatment groups:    
+siNS_0hr vs siNS_16hr    
+
+
+Load the data (from JBC (2012)).
+```{r ReadData}
+jbcdir=c("../data/JBC 2012")
+load(file.path(jbcdir,"jbcdat.rda"))
+```
+Load data in: `r round(Sys.time()- st,3)` secs.
+
+Now reduce the data to samples with treatment level "siNS". I will write a function to subset the columns of our expression matrix (E) and subset the rows of the targets matrix (targets).
+
+```{r subset-data}
+geoid <- rownames(jbcdat$targets)[jbcdat$targets$treatment == "siNS"]
+# write a function to subset the list objects using the column and row names
+subEList <- function(ELst,geonames){
+   sELst <-NULL
+     sELst$targets <- ELst$targets[geonames,]
+     sELst$E       <- ELst$E[,geonames]
+     sELst$genes   <- ELst$genes
+     sELst
+}
+
+siNSdat <- subEList(jbcdat,geoid)
+
+# check the annotation and expression are both subset identically
+identical(rownames(siNSdat$targets),colnames(siNSdat$E))
+```
+
+Let's visualize these 8 samples using an MDS plot.
+
+```{r mdsplot}
+limma::plotMDS(siNSdat$E,labels =siNSdat$targets$hour,lwd=2,cex=1.5,
+        cex.axis=1.3,cex.lab=1.5)
+box(lwd=3)
+```
+
+## MA plot
+
+The MA plot is a plot of the log2 Fold change, the difference in average log2 expression in group 1 vs average log2 expression in group 2 (y axis), vs the overall average log2 expression (x axis).  
+
+```{r MAplot}
+Index1 <- which(siNSdat$target$hour=="0hr")
+Index2 <- which(siNSdat$target$hour=="16hr")
+
+d <- rowMeans(siNSdat$E[,Index2])-rowMeans(siNSdat$E[,Index1])
+a <- rowMeans(siNSdat$E)
+
+par(mfrow=c(1,2))
+plot(a,d,xlab="Average (log2) intensity",ylab="Log2 Fold Change",main="MA plot",pch=".")
+
+smoothScatter(a,d,nrpoints=500,
+              xlab="Average (log2) intensity",
+              ylab="Log2 Fold Change",
+              main="MA plot")
+abline(-1,0,col=7,lwd=3)
+abline(1,0,col=7,lwd=3)
+abline(0,0,col=2,lwd=3)
+```
+
+We created two displays of the MA plot. Once using a scatter diagram and a second time smoothing the scatter points.  When there are too many points in a figure and they overlap a lot, it is hard to actually determine where the points are most dense. The smoothed scatter is better at showing the density of points, is faster to print, and will be a smaller size file to save than the figure on the left.
+
+These figures should show a density of points around Log2 Fold Change of 0, indicating the many features are similar in the two groups. Sometimes, when the points are shifted above 0 or below 0, they indicate an artifact in the data that requires adjusting. We will see examples of that with figures for bulk sequencing data later.  The figure on the right shows that the main density of points occurs at a log2 fold change of 0 (good, there is no artifact comparing these groups.)
+
+## 2s t-test
+
+Here we do a single 2-sample (2s) t-test for each feature in our data set.
+
+```{r ttests}
+time2 <- ifelse(siNSdat$targets$hour=="16hr",1,2)
+tt <- genefilter::rowttests(siNSdat$E,factor(time2))
+head(tt,n=3)
+```
+
+Find the top 10 features ordered by statistical significance (10 smallest p-values).
+```{r}
+tt <- tt[order(tt$p.value),]
+top10 <- head(tt,n=10)
+top10
+siNSdat$genes[rownames(top10),]
+```
+
+A volcano plot will allow us to visualize the results for all hypothesis tests in one figure.
+
+## Volcano plot
+
+The volcano plot is a scatterdiagram of -log10(P-value) vs log2 fold change. This shows a measure of statistical significance versus effect size. 
+
+```{r volcano-plot}
+tt   <- genefilter::rowttests(siNSdat$E,factor(time2))
+d    <- tt$dm
+lodt <- (-log10(tt$p.value))
+
+plot(d,lodt,main="Volcano plot for t-test",xlab="Log2 Fold Change",
+	ylab="-log10 (P-value)",pch=".")
+# make larger data points when -log10 pvalue > 5 
+#  pch = 20 gives solid dots, col=4 is blue
+points(d[lodt>5],lodt[lodt>5],pch=20,cex=0.5,col=4)
+# If you want to write the gene symbol for the 10 most statistically.  significant features
+rankp <- rank(tt$p.value)
+text(d[rankp<=10],lodt[rankp<=10],
+     siNSdat$genes$Symbol[rankp<=10],col="blue",cex=.7)
+```
+
+But, this is not the correct analysis for these data. What is the correct analysis and why?
+
+## 2s moderated t 
+
+We learned that for small sample sizes we are better off using the moderated t-test. 
+Let's run the moderated t-test and compare the results.
+
+```{r modt}
+design <- model.matrix(~siNSdat$targets$hour)
+fit <- limma::lmFit(siNSdat$E,design)
+# fit has 2 coefficients: intercept + Coef of interest.  Let's just save the test results for the second coefficient, the coefficient of interest. 
+contr.matrix <- as.matrix(c(0,1))
+colnames(contr.matrix) <- c("hr16")
+# This will reduce the model output to the coef of interest only
+fit <- contrasts.fit(fit,contr.matrix)
+efit <- limma::eBayes(fit)
+```
+
+The command topTable will summarize the regression results, ordered by p-value.
+What does the table of top hits look like?
+
+```{r TopT}
+options(digits=3)
+topT <- limma::topTable(efit,n=10)
+topT
+```
+
+Here is the annotation for these features:
+
+```{r genenames}
+siNSdat$genes[rownames(topT),]
+```
+
+Let's count the number of differentially expressed genes with FDR-adjusted p<0.05.
+```{r decideTestsv}
+summary(de <- limma::decideTests(efit, p=0.05))
+```
+This shows that of the 1087 statistically signficant features (FDR-adjusted p < 0.05), 627 are up-regulated and 460 are down-regulated.   How can we decide if a gene is up or down regulated?
+
+The limma package offers a convenient function for creating an MA plot.
+These authors now call this an MD-plot for mean-difference (x-axis vs y-axis). We  highlight the features that are statistically significant in red.
+```{r MAplotv}
+# figure out the location (which position) the differentially expressed gene appears in the list
+detags <- which(as.logical(de))
+limma::plotMD(efit)
+points(efit$Amean[detags],efit$coef[detags],
+     pch=16,cex=0.7,col="red")
+abline(-1,0,col="blue")
+abline(1,0,col="blue")
+```
+
+The limma package also has a function for creating volcano plots.
+
+```{r volcanoplot2}
+limma::volcanoplot(efit,  style = "p-value", highlight = 10, names = siNSdat$genes$Symbol, hl.col="blue",
+            xlab = "Log2 Fold Change", ylab = NULL, pch=16, cex=0.35)
+```
+
+
+## t-test vs mod t
+
+Let's compare the 2 volcano plots:
+
+```{r modTvolcanoplot, echo=FALSE}
+par(mfrow=c(1,2))
+lodt <- -log10(tt$p.value)
+plot(d,lodt,main="2-sample t-test",xlab="Log2 Fold Change",
+	ylab="-log10 (P-value)",pch=".", ylim=c(0,10.4))
+rankp <- rank(tt$p.value)
+text(d[rankp<=10],lodt[rankp<=10],
+     siNSdat$genes$Symbol[rankp<=10],col="blue",cex=.7)
+
+
+limma::volcanoplot(efit,  style = "p-value", highlight = 10, names = siNSdat$genes$Symbol, hl.col="blue",
+            xlab = "Log2 Fold Change", ylab = NULL, pch=16, cex=0.35)
+```
+
+Name 2 differences you see comparing these 2 figures.
+
+If we compare the IDs of the top 10 features identified from each method, only
+`r length(intersect(rownames(top10),rownames(topT)))` appear in both lists. Why is this concordance so low? Let's compare the p-values from student's t-test and the moderated t-test.
+```{r ttvmodt}
+par(mar=c(5,5,3,2))
+lodmt <- -log10(efit$p.value)
+plot(lodt,lodmt,pch=".",cex.axis=1.2,cex.lab=1.2,
+	xlab="-log10(p), 2-sample t",
+	ylab="-log10(p), moderated t")
+abline(0,1,col=2,lwd=3)
+```
+
+That's a pretty noisy association. What drives this scatter?
+
+1. Was there a change in the difference in group means (Log2 Fold change)?
+
+2. What about the standard deviation?
+```{r sdplot}
+plot(efit$sigma,sqrt(efit$s2.post),pch=".",
+     xlab="Pooled sd",ylab="Moderated pooled sd")
+abline(0,1)
+segments(sqrt(efit$s2.prior),0,sqrt(efit$s2.prior),1,col=2)
+text(0.2,0.8,"sd Prior",col=2,adj=0,lwd=3)
+```
+
+This shows how the moderated (pooled) standard deviation is "shrunk" closer to the prior, $s_0$. So, small standard deviations become a little bigger, making the moderated t-test smaller and less statistically significant. Large standard deviations are also shrunk towards the prior. This makes large standard deviations smaller, which makes the moderated t-test larger and more statistically significant.
+
+Let's look at the expression of a gene that was highly significant with the t-test and is no longer so when using the moderated t-test.
+
+```{r selectgene}
+thisone <- which(lodt > 4 & lodmt < 1.05)
+index <- order(siNSdat$targets$hour)
+data <- cbind.data.frame(Index=1:8,
+                         log2E = siNSdat$E[thisone,index],
+                         time = siNSdat$targets$hour[index])
+ggplot(data,  aes(x=Index, y=log2E, color = time)) + geom_point(size=2.5) +
+  labs(color="Time") + ylab("Log2 Expression")
+```
+
+Although the expression level does separate the samples by time, this is a very lowly expressed gene, and the difference in group means is very small.  It could be that this is a chance occurrence due to the small sample size.
+
+Now let's look at the expression signal coming from a feature that was highly significant by both the t-test and moderated t-test.
+
+```{r selectgene2}
+thisone <- which(lodt > 7 & lodmt > 10)
+index <- order(siNSdat$targets$hour)
+data <- cbind.data.frame(Index=1:8,
+                         log2E = siNSdat$E[thisone,index],
+                         time = siNSdat$targets$hour[index])
+ggplot(data,  aes(x=Index, y=log2E, color = time)) + geom_point(size=2.5) +
+  labs(color="Time") + ylab("Log2 Expression")
+```
+
+Now that's a highly expressed gene, with a large difference in mean expression between the two groups.
+
+*Recommendation:* In small samples (n<10 per group), the moderated t-test is preferred because it selects fewer genes with small effect sizes. 
+
+## SessionInfo
+
+Total runtime: `r round(Sys.time()-st,3)` secs.
+
+```{r sessionInfo}
+sessionInfo()
+```
