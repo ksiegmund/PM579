@@ -1,0 +1,202 @@
+---
+title: "Small sample t tests"
+author: "ks"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if(!require("genefilter")){BiocManager::install("genefilter")} 
+if(!require("tidyverse")){BiocManager::install("tidyverse")} 
+library(genefilter)
+library(tidyverse)
+```
+
+### 1. Test for differential expression with small sample size
+
+Single gene: Simulate the expression value for 1 gene ~ N(mean=6, sd=0.5) in 6 samples with 10,000 replicates. For each replicate, compute the 2-sample t-statistic with n=3 observations in each group. Since the mean is the same in both groups, the data are simulated under the null hypothesis of no difference in mean. 
+What is the empirical significance level for alpha=0.05?  Is the t-test valid?
+
+```{r simdat}
+set.seed(567)
+simdat <- replicate(6,
+                    rnorm(n = 10000, mean = 6, sd = 0.5)
+          )
+dim(simdat)
+```
+
+```{r tt}
+tt=genefilter::rowttests(simdat,
+                         factor(rep(c("gp1","gp2"),each = 3)))
+head(tt)
+```
+
+What is the empirical significance level for alpha = 0.05?  (How often do you reject the null hypothesis with p<0.05?)
+
+```{r empirical-signlevel}
+
+
+```
+
+Is this a valid test? Do you reject the test 5\% of the time?
+
+
+### 2. Test differential expression of 20000 genes 
+
+Suppose we want to test for differential expression in two treatment groups (treatment vs control), each run in triplicate.
+Let's run a simulation to see how the t-test behaves in small sample sizes of 3 vs 3, when there is no treatment effect (null hypothesis).  What mean and sd should we use?
+
+I propose getting the mean gene expression profile and estimates of standard deviation from the data set we've been using in class/labs (jbcdat.rda). 
+
+Let's load the data from JBC (2012).
+```{r ReadData}
+jbcdir=c("../data/JBC 2012")
+load(file.path(jbcdir,"jbcdat.rda"))
+```
+
+How might you use these data to simulate gene expression profiles for 6 independent and identically distributed samples? (n=20,000 genes)
+
+Get mean and standard deviations for 20,000 features from this data set. 
+
+```{r }
+avg_e <- rowMeans(jbcdat$E)[1:20000]
+sd_e  <- rowSds(jbcdat$E)[1:20000]
+```
+
+Show the distributions of the parameter estimates.  
+
+```{r }  
+par(mfrow=c(1,2))
+hist(avg_e)
+hist(sd_e)
+```
+
+And, because the data are on the log2 scale, these are approximately independent.
+
+```{r }  
+smoothScatter(avg_e,sd_e,nrpoints=500,
+              xlab="Average (log2) expression",
+              ylab="sd_e",
+              main="Standard Dev vs Mean Expression")  
+```
+Good. This means we can use 2-sample t-tests to compare group means.
+
+Now let's go back and simulate data using these values as our parameters (means and sds). 
+
+1 observation has 20000 genes ~ N(mean_vec, sd_vec), where mean_vec and sd_vec are the vectors of 20000 means and 20000 standard deviations we computed from our data set. 
+
+We want to simulate data under the null, so let's simulate 6 independent observations.  
+
+IMPORTANT:  Make sure everyone in your group simulates the same data.
+
+```{r }
+ng <- length(avg_e)
+set.seed(579)
+simdat <- replicate(6,
+                    rnorm(n = ng, mean = avg_e, sd = sd_e)
+)
+dim(simdat)
+
+```
+
+Let's compute the averages and sds of our simulated data in the 2 treatment groups. Let group 1 be columns 1-3 and group 2 is columns 4-6.
+```{r }
+idx1 <- c(1:3)
+idx2 <- c(4:6)
+gp1_avg <- rowMeans(simdat[,idx1])
+gp2_avg <- rowMeans(simdat[,idx2])
+
+gp1_sd <- rowSds(simdat[,idx1])
+gp2_sd <- rowSds(simdat[,idx2])
+```
+
+What do you expect to see when you plot gp1_avg vs gp2_avg?
+
+Let's check:
+```{r }  
+smoothScatter(gp1_avg,gp2_avg,nrpoints=500)
+lines(lowess(gp1_avg,gp2_avg),col=2)
+abline(0,1)
+```
+
+What do you expect to see when you plot gp1_sd vs gp2_sd?
+
+Let's check:
+```{r }  
+smoothScatter( ,  ,nrpoints=500)
+lines(lowess( , ),col=2)
+abline(0,1)  
+```
+
+
+What do you see?
+
+Let's plot gp1_sd (estimate) vs sd_vec (truth) and gp2 (estimate) vs sd_vec (truth).
+
+```{r s}  
+par(mfrow=c(1,2))
+smoothScatter(sd_e,gp1_sd,nrpoints=500)
+lines(lowess(sd_e,gp1_sd),col=2)
+abline(0,1)  
+
+smoothScatter(sd_e,gp2_sd,nrpoints=500)
+lines(lowess(sd_e,gp2_sd),col=2)
+abline(0,1)  
+```
+
+Describe what you see.
+
+What are the implications for the t-test?
+
+Let's go run the t-tests for each gene, and plot the absolute value of the t-statistics as a function of the pooled standard error.
+
+```{r ttests}
+tt=genefilter::rowttests(simdat,
+                         factor(rep(c("gp1","gp2"),each = 3)))
+tt <- cbind.data.frame(tt,
+                        pooled_se = tt$dm/tt$statistic)
+```
+
+```{r plot_tstat_vs_pooledse}
+smoothScatter(tt$pooled_se,abs(tt$statistic))
+abline(qt(0.95,4),0,col=2,lwd=2)
+```
+
+The red line shows the value of the t-statistic that rejects 5\% of the genes. What can you say about those genes? Does this appear unbiased? What do you know about the test statistics (genes) that are rejected? 
+
+
+The next chunk of code is pretty dense. What I am going to do is categorize the pooled_se (X axis) into 10 groups of equal size (deciles). Then, for each group/decile, I'm going to   
+1. compute the empirical false-positive rate of the t-test for alpha = 0.05 and alpha = 0.01, and   
+2. compute the value of pooled_se that is the midpoint of each group. 
+Then I plot the false-positive error rate as a function of the pooled standard error.
+
+```{r plot_tstat_vs_pooledse2}
+tt <- 
+tt %>% 
+  mutate(poolse_decile = ntile(pooled_se, 10))
+  
+sumquant <- 
+  tt %>%
+  group_by(poolse_decile) %>%
+  summarize(emp.pval_05 = mean(p.value<0.05),
+            emp.pval_01 = mean(p.value<0.01))
+  sumquant <- cbind.data.frame(sumquant,
+      quantpldse = quantile(tt$pooled_se,probs=seq(0.05,0.95,.1)))
+
+plot(sumquant$quantpldse,sumquant$emp.pval_05,
+     type="l", 
+     xlab = "Pooled SD", 
+     ylab = "Pr(|T| > t)",
+     main = "False-positive rate",
+     ylim = c(0,0.17))
+text(0.11,0.15,"\U03B1 = 0.05")
+lines(sumquant$quantpldse,sumquant$emp.pval_01,
+      lty=2)
+text(0.12,.025,"\U03B1 = 0.1")
+```
+
+What does this show us about the results of the t-test under the null hypothesis?
+What does the error rate look like if we had had a larger sample size? 
+
+The moderated t-test will address the bias we see for small sample sizes.
