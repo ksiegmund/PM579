@@ -127,7 +127,7 @@ sce
 
 Compare each cluster to each of the remaining clusters, and identify the top marker genes that are differentially expressed between the two subgroups. 
 
-What are the cluster sample sizes? Do we need to use a moderated t-statsitic or can we use an ordinary one?
+What are the cluster sample sizes? Do we need to use a moderated t-statistic or can we use an ordinary one?
 
 ```{r cluster-sizes}
 table(sce$label)
