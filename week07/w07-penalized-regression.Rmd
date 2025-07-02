@@ -14,9 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Background
 
-Here is a website that gives 3 simulation models for comparing ridge, lasso, and elastic net regression.
-
+This example is based on the code Josh Day's example from a website that no
+longer exists:
 https://www4.stat.ncsu.edu/~post/josh/LASSO_Ridge_Elastic_Net_-_Examples.html
+
+There used to be a website that gives 3 simulation models for comparing ridge, lasso, and elastic net regression.
 
 The StatQuest video uses the model in example 1 for teaching how to perform penalized regression in R using the function glmnet(). I'm going to have us run the code from the website and the video and interpret the results.
 
@@ -31,17 +33,6 @@ All predictors are created as (standardized) normal random variates. Then it com
 Parameters = 15-1's, 4985- 0's
 
 which measure the effect sizes for the p features. All predictor variables are independent.
-
-## Website code
-
-```{r libs}
-r <- getOption("repos")
-r["CRAN"] <- "http://cran.wustl.edu/"
-options(repos = r)
-
-if (!require(glmnet)) install.packages("glmnet")
-library(glmnet)
-```
 
 **Generate data**
 
@@ -62,6 +53,18 @@ x.test <- x[-train_rows, ]
 y.train <- y[train_rows]
 y.test <- y[-train_rows]
 ```
+
+## Penalized Regression
+
+```{r libs}
+r <- getOption("repos")
+r["CRAN"] <- "http://cran.wustl.edu/"
+options(repos = r)
+
+if (!require(glmnet)) install.packages("glmnet")
+library(glmnet)
+```
+
 
 **Fit models**
 
@@ -131,16 +134,16 @@ cbind.data.frame(alpha=seq(0,1,0.1),
                          mse6,mse7,mse8,mse9,mse10))
 ```
 
-Compare this to the output:
-https://www4.stat.ncsu.edu/~post/josh/LASSO_Ridge_Elastic_Net_-_Examples.html#example-1
 
-Please explain your thoughts about this comparison.
 
 ## StatQuest code
 
 **Generate data**
 
-We have the same model, but the video sets a different seed.
+We have the same model, but the analysis generates the results differently. 
+Here's the code used in the video.
+## https://github.com/StatQuest/ridge_lasso_elastic_net_demo/blob/master/ridge_lass_elastic_net_demo.R
+
 
 ```{r simdata}
 # Generate data
@@ -163,18 +166,29 @@ y.test <- y[-train_rows]
 **Fit models**
 
 ```{r cvglmnet}
+## alpha = 0, Ridge Regression
 alpha0.fit <- cv.glmnet(x.train, y.train, type.measure="mse",
                         alpha = 0, family="gaussian")
+## now let's run the Testing dataset on the model created for
+## alpha = 0 (i.e. Ridge Regression).
 alpha0.predicted <- predict(alpha0.fit, s = alpha0.fit$lambda.1se,
                             newx = x.test)
+## Lastly, let's calculate the Mean Squared Error (MSE) for the model
+## created for alpha = 0.
+## The MSE is the mean of the sum of the squared difference between 
+## the predicted 'y' values and the true 'y' values in the 
+## Testing dataset...
 mean((y.test - alpha0.predicted)^2)
 
+
+## alpha = 1, Lasso Regression
 alpha1.fit <- cv.glmnet(x.train, y.train, type.measure="mse",
                         alpha = 1, family="gaussian")
 alpha1.predicted <- predict(alpha1.fit, s = alpha1.fit$lambda.1se,
                             newx = x.test)
 mean((y.test - alpha1.predicted)^2)
 
+## alpha = 0.5, a 50/50 mixture of Ridge and Lasso Regression
 alpha0.5.fit <- cv.glmnet(x.train, y.train, type.measure="mse",
                         alpha = 0.5, family="gaussian")
 alpha0.5.predicted <- predict(alpha0.5.fit, 
@@ -195,19 +209,25 @@ for (i in 0:10){
               family = "gaussian")
 }
 
+## Now we see which alpha (0, 0.1, ... , 0.9, 1) does the best job
+## predicting the values in the Testing dataset.
 results <- data.frame()
 for (i in 0:10){
   fit.name <- paste0("alpha", i/10)
-  
+
+  ## Use each model to predict 'y' given the Testing dataset
   predicted <-
     predict(list.of.fits[[fit.name]] ,
            s = list.of.fits[[fit.name]]$lambda.1se, newx = x.test)
   
+  ## Calculate the Mean Squared Error...
   mse <- mean((y.test-predicted)^2)
   
+  ## Store the results
   temp  <- data.frame(alpha = i/10, mse = mse, fit.name = fit.name)
   results <- rbind(results,temp)
 }
+## View the results
 results
 ```
 
@@ -217,12 +237,10 @@ https://www.youtube.com/watch?v=ctmNq7FgbvI&t=203s
 
 (16:41 min)
 
-And from the website? 
+Why do you think the results differ despite using the same random number seed? 
 
-1. Name one thing you can do to investigate this further  
-2. Do what you proposed in 1., and prepare to share the result of your investigation with the class.
+## Session Information
 
-### Session Information
 ```{r sI}
 sessionInfo()
 ```
