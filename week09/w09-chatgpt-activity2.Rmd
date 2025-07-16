@@ -174,15 +174,15 @@ sim.paired <- function() {
       design1 <- model.matrix(~ factor(gp),data = sim2$targets)
       fit1  <- limma::lmFit(sim2$E,design1)
       efit1 <- limma::eBayes(fit1)
-      fdr1 <- mean(efit1$p.value[,2]<0.05)
+      fpr1 <- mean(efit1$p.value[,2]<0.05)
 
       # adjust for subject
       design2 <- model.matrix(~ factor(gp) + factor(subj),data = sim2$targets)
       fit2  <- limma::lmFit(sim2$E,design2)
       efit2 <- limma::eBayes(fit2)
-      fdr2 <- mean(efit2$p.value[,2]<0.05)
+      fpr2 <- mean(efit2$p.value[,2]<0.05)
    
-      list(fdr1=fdr1, fdr2=fdr2)
+      list(fpr1=fpr1, fpr2=fpr2)
 }
 ```
 
