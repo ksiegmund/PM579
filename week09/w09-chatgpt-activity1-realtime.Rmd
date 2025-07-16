@@ -190,7 +190,15 @@ ChatGPT prompt:
 
 ```{r fig3,fig.cap='Volcano plot of differential expression of day 2 (n=3) vs day 0 (n=3), adjusted for subject'}
 
+aecsub$targets$day <- factor(aecsub$targets$day, levels = c("D0", "D2"))
+design <- model.matrix(~ day + age, data = aecsub$targets)
+fit <- lmFit(aecsub$E, design)
 
+contr.matrix <- as.matrix(c(0,1,0))
+colnames(contr.matrix) <- c("day2")
+# This will reduce the model output to the coef of interest only
+fit <- contrasts.fit(fit,contr.matrix)
+efit <- limma::eBayes(fit)
 ```
 
 
