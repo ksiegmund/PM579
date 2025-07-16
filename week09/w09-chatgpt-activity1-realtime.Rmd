@@ -186,7 +186,7 @@ Now I should have accounted for the paired nature of our measurements. Let's do 
 
 ChatGPT prompt:  
 
-
+How can I run differential expression to compare day 2 to day 0 adjusting for age?
 
 ```{r fig3,fig.cap='Volcano plot of differential expression of day 2 (n=3) vs day 0 (n=3), adjusted for subject'}
 
