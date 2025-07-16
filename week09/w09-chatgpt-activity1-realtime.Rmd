@@ -1,0 +1,277 @@
+---
+title: "ChatGPT Activity 1"
+author: "ks"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# {.tabset}
+
+## Activities
+
+1. Subset the homework 3 data (study of lung cell differentiation) to day 0 and day 2   
+2. Perform a differential expression analysis comparing the data at days 0 and 2 
+3. Generate a figure to summarize the results 
+4. Describe the results
+
+**Assignment**: Using the same lung data set from homework 2, you will perform a differential expression analysis between days 0 and 2.  ...
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loadlibraries}
+library(bookdown)
+library(matrixStats)
+library(ggplot2)
+library(limma)
+library(dplyr)
+library(tidyr)
+```
+
+
+## Data 
+
+Load the human alveolar epithelial cell dataset and subset it to days 0 and 2.
+
+```{r aecdata}
+   load("../data/aec.rda")
+# write a function to subset the list objects using the column and row idx
+
+subEList <- function(ELst,ids){
+   sELst <-NULL
+     sELst$targets <- ELst$targets[ids,]
+     sELst$E       <- ELst$E[,ids]
+     sELst$genes   <- ELst$genes
+     sELst
+}
+
+   idx <- which(aec$targets$day %in% c("D0","D2"))
+   aecdat <- subEList(aec,idx)
+   aecdat$targets
+```
+
+These data are from Marconett et al. Integrated transcriptomic and epigenomic analysis of primary human lung cell differentiation. PLoS Genet 2013. PMC3688557.
+
+```{r}
+table(aecdat$targets$day)
+```
+
+
+## Differential Expression
+
+Create a figure to display the results from the differential expression analysis. Write a figure caption that names the data display and interpret the axes.  Describe any patterns that you see in the figure.
+
+```{r fig1,fig.cap='Volcano plot of differential expression of day 2 (n=3) and day 0 (n=4) '}
+design <- model.matrix(~day, data=aecdat$targets)
+#design
+fit <- limma::lmFit(aecdat$E,design)
+# fit has 2 coefficients: intercept + Coef of interest.  Let's just save the test results for the second coefficient, the coefficient of interest. 
+contr.matrix <- as.matrix(c(0,1))
+colnames(contr.matrix) <- c("day2")
+# This will reduce the model output to the coef of interest only
+fit <- contrasts.fit(fit,contr.matrix)
+efit <- limma::eBayes(fit)
+
+limma::volcanoplot(efit,  style = "p-value", highlight = 10, names = aecdat$genes$Symbol, hl.col="blue",
+            xlab = "Log2 Fold Change", ylab = NULL, pch=16, cex=0.35)
+```
+
+Report the number of results that are significant at a 5% false-discovery rate. Then create a table of the top 10 differentially expressed features.
+
+```{r decideTestsv}
+summary(de <- limma::decideTests(efit, p=0.05))
+```
+
+```{r TopT}
+options(digits=3)
+topT <- limma::topTable(efit,n=10)
+topT
+```
+
+Here is the annotation for these features:
+
+```{r genenames}
+aecdat$genes[rownames(topT),]
+```
+
+NOTE: Some features do not have Entrez Gene IDs. 
+
+```{r}
+sum(is.na(aecdat$genes$Entrez_Gene_ID))
+```
+
+## Analysis concerns
+
+Concern 1. Day 0 has a technical replicate      
+Concern 2. Time series measures are matched/paired   
+
+Regarding 1:   
+
+Analyzing Day 0 as having 4 independent measurements is wrong because it assumes we have more information than we have. We have 2 options, averaging the 2 technical replicates or picking 1 of them. The average will have a different variance than a single measurement, so for simplicity, I will pick 1 observation and remove the other. 
+
+Ask ChatGPT for help removing the row with duplicate day/age. Then go remove that sample from the expression data too.
+
+Prompt:  I'm running R and have a dataframe. How can I remove duplicate rows?
+
+My dataset looks like this:
+
+
+ 
+barcode
+<chr>
+day
+<chr>
+age
+<dbl>
+GSM945645	5626686051_F	D0	49	
+GSM945646	5626686051_H	D2	49	
+GSM945648	5626686013_A	D0	61	
+GSM945653	5626686013_F	D2	66	
+GSM945654	5626686013_G	D0	61	
+GSM945655	5626686013_H	D2	61	
+GSM945658	5626686013_K	D0	66	
+
+```{r rmduplicate}
+aecsub <- NULL
+aecsub$targets <- aecdat$targets[!duplicated(aecdat$targets[, c("day", "age")]), ]
+aecsub$E <- aecdat$E[,rownames(aecsub$targets)]
+```
+
+
+Check the results of data filtering.
+
+```{r}
+aecsub$targets
+identical(rownames(aecsub$targets),colnames(aecsub$E))
+```
+
+
+
+## Diff Expr 3v3
+
+Perform differential expression on filtered data set of n3=3 vs n=3.
+
+```{r fig2,fig.cap='Volcano plot of differential expression of day 2 (n=3) and day 0 (n=3)  after removing technical replicate'}
+design <- model.matrix(~day, data = aecsub$targets)
+#design
+fit <- limma::lmFit(aecsub$E,design)
+# fit has 2 coefficients: intercept + Coef of interest.  Let's just save the test results for the second coefficient, the coefficient of interest. 
+contr.matrix <- as.matrix(c(0,1))
+colnames(contr.matrix) <- c("day2")
+# This will reduce the model output to the coef of interest only
+fit <- contrasts.fit(fit,contr.matrix)
+efit <- limma::eBayes(fit)
+
+limma::volcanoplot(efit,  style = "p-value", highlight = 10, names = aecsub$genes$Symbol, hl.col="blue",
+            xlab = "Log2 Fold Change", ylab = NULL, pch=16, cex=0.35)
+```
+
+```{r decideTestsv2}
+summary(de2 <- limma::decideTests(efit, p=0.05))
+```
+
+Let's compare this to the analysis of 7 samples.
+
+```{r}
+table(de,de2)
+```
+
+Over 1000 fewer features are differentially expressed, which makes sense because previously we exaggerated the accuracy of our measures by including a technical replicate.
+
+## repeat, adj for subject using age
+
+Now I should have accounted for the paired nature of our measurements. Let's do that now and see how much changes if I adjust for patient lung, to look at within-subject differences over time. (paired test). Let's ask ChatGPT how to adjust the model for lung age (subject). 
+
+ChatGPT prompt:  
+
+
+
+```{r fig3,fig.cap='Volcano plot of differential expression of day 2 (n=3) vs day 0 (n=3), adjusted for subject'}
+
+
+```
+
+
+Number of differentially expressed features (FDR-adjusted p<0.05):
+```{r decideTestsv3}
+summary(de3 <- limma::decideTests(efit, p=0.05))
+```
+
+Now compare this to the analysis of 3 vs 3 without adjustment (2-sample t-test).
+
+```{r}
+table(de2,de3)
+```
+
+I find ___________(more/fewer) differentially expressed genes using the age-adjusted model.  Why?
+
+
+Is that the best way to adjust for subject?  Let's look at the design matrix:
+```{r}
+design
+```
+
+Since subject is a nuisance variable, we should try to adjust for it in the most flexible manner possible. Is that the most flexible model to adjust for subject/lung effects?  If no, how would you improve the model?
+
+
+```{r fig4,fig.cap='Volcano plot of differential expression of day 2 (n=3) vs day 0 (n=3), adjusted for subject'}
+
+
+```
+
+
+```{r decideTestsv4}
+summary(de4 <- limma::decideTests(efit, p=0.05))
+```
+
+Compare results from the previous adjusted model to the new one and interpret the results.
+```{r}
+table(de3,de4)
+```
+
+Does this make sense?
+
+
+There is a third way one might consider modeling the correlation. That is to model the subject-level variation using a random effect where each lung has its own average expression level. This puts a parametric distribution on the variation in expression between lungs. How would that affect our results?
+
+## Model correlation
+
+```{r fig5,fig.cap='Volcano plot of differential expression of day 2 (n=3) vs day 0 (n=3), using linear-mixed effects model'}
+design <- model.matrix(~ day, data = aecsub$targets)
+#Then we estimate the correlation between measurements made on the same subject:
+corfit <- duplicateCorrelation(aecsub$E,design,block=factor(aecsub$targets$age))
+corfit$consensus
+#Then this inter-subject correlation is input into the linear model fit:
+fit <- lmFit(aecsub$E,design,
+             block=aecsub$targets$age,
+             correlation=corfit$consensus)
+
+contr.matrix <- as.matrix(c(0,1))
+colnames(contr.matrix) <- c("day2")
+
+fit <- contrasts.fit(fit,contr.matrix)
+efit <- limma::eBayes(fit, trend = TRUE)
+
+decorr  <- decideTests(efit, p.value = 0.05)
+summary(decorr)
+```
+
+
+```{r decideTestsvc5}
+table(de4,decorr)
+```
+
+It finds _______________(more/fewer) features.  Is that good or bad?  To answer that, I would want to run
+a simulation and estimate the false-positive rate of the different models. Do any of the models have an inflated error rate?
+
+I want to run a simulation to know if I should model the correlation with a random effect, or adjust for it using a fixed effect.  We can pursue that question in: w09-chatgpt-activity2.Rmd
+
+## Report computing environment
+
+Now output the computing environment listing the different software versions installed on your computer.
+
+```{r sessioninfo}
+  sessionInfo()
+```
