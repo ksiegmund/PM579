@@ -31,7 +31,7 @@ load("../data/JBC 2012/gse31873.rda")
 show(gse31873)
 ```
 
-We want to oragnize the data into a list object, jbcdat, with three matrices:    
+We want to organize the data into a list object, jbcdat, with three matrices:    
 * E for the expression data  (exprs)  
 * targets for sample annotation  (pData)  
 * genes for gene annotation  (fData)  
