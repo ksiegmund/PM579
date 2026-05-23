@@ -1,0 +1,139 @@
+---
+title: "Examining Data"
+author: "ks"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+r = getOption("repos")
+r["CRAN"] = "http://cran.us.r-project.org"
+options(repos = r)
+
+if (!require(ggplot2)) {install.packages("ggplot2")}
+if (!require(matrixStats)) {install.packages("matrixStats")}
+if (!require(tidyr)) {install.packages("tidyr")}
+library(ggplot2)
+library(matrixStats)
+```
+
+## ENDEAR
+
+Steps to data analysis:  
+1. *E*xami*N*e data  
+2. *DE*scribe methods   
+3. *A*nalyze    
+4. *R*eport   
+
+Let's *examine* the data set that were introduced in the week 1 video titled "PM579 Gene Expression Data". Our goal is to become more familiar with the data object in R and the data values in it. The dimension reduction analyses we'll see, and perform, in class this week, will all use this data set.
+
+```{r loadjbc}
+load("../data/JBC 2012/jbcdat.rda")
+```
+
+What are the names of the objects in this data set (list).
+
+```{r jbcobj}
+names(jbcdat)
+```
+
+What are the dimensions of the gene expression data set? What is the scale of the measurements?
+
+```{r gex}
+dim(jbcdat$E)
+head(jbcdat$E[,1:3])
+```
+
+What sample annotation data are provided?
+
+```{r targets}
+head(jbcdat$targets)
+```
+
+How many replicates are there of each experimental condition?
+
+```{r design}
+with(jbcdat$targets,table(treatment,hour))
+```
+
+Are the data objects identically sorted?
+
+```{r qc}
+identical(rownames(jbcdat$targets),colnames(jbcdat$E))
+```
+
+Yes! This assures us that the row-order of the sample annotation file matches the column-order (samples) in the gene expression data set. This will allow us to annotate the gene expression arrays with the treatment the cells received.
+
+```{r boxplot}
+boxplot(jbcdat$E)
+```
+
+These arrays have already been normalized, which gives them identical distributions. This type of plot would be more informative when run on the raw data before normalization. Then it might identify failed arrays. GEO data will likely provide the normalized data for reproducibility of their results. Some might include the raw data also.
+
+It's hard to visualize all 47,000+ features. I'll just plot the distribution of gene expression for the first 9 genes (rows) in the data matrix. In class we'll discuss code for applying dimension reduction techniques to this data set.
+```{r tidybox, echo=FALSE}
+df <- cbind.data.frame(ilmnid = rownames(jbcdat$E[1:9,]),
+                       jbcdat$E[1:9,])
+
+# The arguments to gather():
+# - data: Data object
+# - key: Name of new key column (made from names of data columns)
+# - value: Name of new value column
+# - ...: Names of source columns that contain values
+# - factor_key: Treat the new key column as a factor (instead of character vector)
+
+data_long <- tidyr::gather(df, gsm, value, colnames(jbcdat$E[1:9,]), factor_key=TRUE)
+
+pl <- ggplot(data_long, aes(value))
+pl + geom_density(aes(fill=factor(ilmnid))) + facet_wrap(~ilmnid) +
+  labs(title="Density plot",
+       x="log2(exprs)",
+       fill="ilmnid")
+```
+
+The mean expression of the first 9 genes vary between ~5 and 15 on the log2 intensity scale. Individually, each gene looks roughly normally distributed. Still, sometimes people use robust measures for the center of the distribution and the scale. Later on, we'll use the median absolute deviation for our robust measure of variability. 
+
+Here's how we might describe our data set.
+
+*Data:*  Our data consist of 24 Illumina HT gene expression arrays from a 3x2 factorial design. Prostate cancer cells (C4-2B) were subject to three knockdown experiments targeting CBP, p300 and a non-specific control. Three days later the cells were treated with DHT hormone, with gene expression measured at 0 and 16 hours post-DHT treatment. Each experiment was repeated 4 times. The data were downloaded from Gene Expression Omnibus (gse31873).
+
+###  Summary Statistics 
+
+As I mentioned above, it's hard to view 47,000+ distributions of gene expression. However, we can easily look at 47,000+ summary statistics from those distributions. 
+
+Let's look at the distribution of the mean expression level for all features (genes) on the array, and look at the distribution of variability too. For variability, I will use median absolute deviation, a more robust measure than standard deviation. Note the commands that allow us to compute these for each gene without looping through the matrix.
+```{r jbdsum}
+mn_e  <- rowMeans(jbcdat$E)
+mad_e <- matrixStats::rowMads(jbcdat$E)
+```
+
+Now we can view the distributions of the statistics.
+```{r mnvar}
+par(mfrow=c(1,3))
+hist(mn_e)
+hist(mad_e)
+hist(log(mad_e))
+```
+
+The plot of mean values shows that a large fraction of the genes on the array are not expressed. (Not all genes are expressed in all tissues.) Gene expression levels ~4-5 are low (background) levels.  The distribution of variabilty (MAD) is skewed right. This is not surprising for a distribution of positive values. When we model this distribution later, we'll use the natural-log scale since that is more bell-shaped and approximately normally distributed. 
+
+Is there an association between means and variances? 
+
+```{r scatterplot}
+plot(mn_e,mad_e, pch=".")
+```
+
+We don't have any idea what the data show in the black areas of the scatter plot. Also, a graph with >47,000 data points will make a large file and take a long time to print. A more informative figure would be to show a smoothed color density representation of the data.
+
+```{r smoothscattermn-mad}
+smoothScatter(mn_e,mad_e)
+```
+
+The expression values are on the log2 scale. On this scale, the variability is, roughly speaking, independent of the mean, making this the prefered scale for t-tests and regression analysis.
+
+[Comment: If you exponentiate the data using 2^jbcdat$E to go back to the raw intensity scale and now recompute row mean and row variability, you'd see a very different relationship between the mean and variance.]
+
+```{r sessioninfo}
+sessionInfo()
+```
