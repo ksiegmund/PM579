@@ -1,0 +1,86 @@
+---
+title: "Numbered Figure Captions"
+author: "K Siegmund"
+date: today
+format: html
+execute:
+  echo: true
+  warning: false
+---
+
+```{r}
+#| label: rlibraries
+#| echo: false
+library(ggplot2)
+```
+
+```{r}
+#| label: loaddata
+load("../data/JBC 2012/jbcdat.rda")
+dim(jbcdat$E)
+```
+
+# Principal Components Analysis
+
+```{r}
+#| label: fig-pca
+#| fig-cap: "PCA of 24 gene expression arrays."
+tE <- t(jbcdat$E)
+
+my.pca <- prcomp(tE, center = TRUE,
+                 scale = matrixStats::colMads(tE),
+                 retx = TRUE)
+dfx <- as.data.frame(my.pca$x)
+
+ggplot(dfx, aes(x = PC1, y = PC2, color = jbcdat$targets$type)) +
+  geom_point(size = 2.5) +
+  theme(text = element_text(size = 20),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12)) +
+  labs(color = "Treatment")
+```
+
+Now let's repeat the analysis on just the top 500 variable genes. I will use median absolute deviation for measuring variability.
+
+```{r}
+#| label: fig-pca2
+#| fig-cap: "PCA of 24 gene expression arrays (500 most variable genes)."
+fmad <- matrixStats::rowMads(jbcdat$E)
+fidx <- order(fmad, decreasing = TRUE)[1:500]
+
+subsetE <- tE[, fidx]
+
+my.pca <- prcomp(subsetE, center = TRUE,
+                 scale = matrixStats::colMads(subsetE),
+                 retx = TRUE)
+dfx <- as.data.frame(my.pca$x)
+
+ggplot(dfx, aes(x = PC1, y = PC2, color = jbcdat$targets$type)) +
+  geom_point(size = 2) +
+  labs(color = "Treatment")
+```
+
+Why might this show better clustering?
+
+# Multi-dimensional Scaling
+
+```{r}
+#| label: fig-mds
+#| fig-cap: "MDS plot of 24 gene expression arrays (500 features, see methods for details)."
+limma::plotMDS(jbcdat$E, pch = 16,
+               col = unclass(jbcdat$targets$type),
+               xlim = c(-1.5, 1.5), ylim = c(-1, 1),
+               main = "MDS plot")
+legend(-1.5, 1, levels(jbcdat$targets$type),
+       pch = 16, col = order(levels(jbcdat$targets$type)),
+       cex = 0.75)
+```
+
+This result resembles the PCA result, but it can be different due to the different variable selection method. MDS is based on a pairwise dissimilarity matrix of the samples, with separate feature filtering performed by default for each pair of samples.
+
+# Session info
+
+```{r}
+#| label: session-info
+sessionInfo()
+```
